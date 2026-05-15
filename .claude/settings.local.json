@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run build)",
+      "Bash(npm start)",
+      "Bash(curl -s http://localhost:4000/api/health)",
+      "Bash(pkill -f \"node server/index.js\")",
+      "Bash(chmod +x \"C:\\Users\\USER\\Documents\\n8n.strong\\SISTEMA.MAMA\\inicio_rapido.sh\")",
+      "WebFetch(domain:extraordinary-lollipop-84a93f.netlify.app)",
+      "Bash(curl -s https://extraordinary-lollipop-84a93f.netlify.app)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
