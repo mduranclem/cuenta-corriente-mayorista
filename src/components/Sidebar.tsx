@@ -27,7 +27,7 @@ export function Sidebar({ active, onSelect }: SidebarProps) {
   return (
     <>
       {/* Sidebar de escritorio */}
-      <aside className="hidden w-72 shrink-0 flex-col border-r border-border bg-white px-5 py-8 lg:flex">
+      <aside className="hidden w-72 shrink-0 flex-col border-r border-border bg-panel px-5 py-8 lg:flex">
         <div className="mb-10">
           <p className="text-xs uppercase tracking-[0.25em] text-textSecondary">Gestión mayorista</p>
           <h1 className="mt-3 text-3xl font-semibold text-textPrimary">Cuenta corriente</h1>
@@ -41,7 +41,7 @@ export function Sidebar({ active, onSelect }: SidebarProps) {
               className={`flex w-full items-center gap-3 rounded-3xl px-4 py-3 text-left text-sm transition ${
                 active === item.id
                   ? 'bg-accent text-white shadow-lg shadow-accent/10'
-                  : 'text-textSecondary hover:bg-slate-50'
+                  : 'text-textSecondary hover:bg-border'
               }`}
             >
               <span>{item.icon}</span>
@@ -52,7 +52,7 @@ export function Sidebar({ active, onSelect }: SidebarProps) {
       </aside>
 
       {/* Navegación móvil (bottom navigation) */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-border lg:hidden">
+      <div className="fixed bottom-0 left-0 right-0 z-50 bg-panel border-t border-border lg:hidden">
         <div className="flex justify-around px-2 py-2">
           {items.slice(0, 5).map((item) => (
             <button
@@ -72,7 +72,7 @@ export function Sidebar({ active, onSelect }: SidebarProps) {
         </div>
         {/* Navegación secundaria si hay más de 5 items */}
         {items.length > 5 && (
-          <div className="flex justify-center border-t border-slate-100 px-2 py-1">
+          <div className="flex justify-center border-t border-border px-2 py-1">
             {items.slice(5).map((item) => (
               <button
                 key={item.id}

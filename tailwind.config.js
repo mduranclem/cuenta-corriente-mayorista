@@ -6,16 +6,16 @@ export default {
   theme: {
     extend: {
       colors: {
-        surface: '#F6F6F6',
-        panel: '#FFFFFF',
-        border: '#E6E8EC',
-        accent: '#4F46E5',
-        accentSoft: '#EEF2FF',
-        textPrimary: '#111827',
-        textSecondary: '#4B5563',
+        surface: '#0F1419',
+        panel: '#1C2128',
+        border: '#30363D',
+        accent: '#6366F1',
+        accentSoft: '#2D1B69',
+        textPrimary: '#E6EDF3',
+        textSecondary: '#9CA3AF',
       },
       boxShadow: {
-        panel: '0 20px 80px rgba(15, 23, 42, 0.08)',
+        panel: '0 20px 80px rgba(0, 0, 0, 0.25)',
       },
     },
   },

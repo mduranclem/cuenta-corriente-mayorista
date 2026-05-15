@@ -481,14 +481,14 @@ function App() {
               <button
                 type="button"
                 onClick={() => setPage('dashboard')}
-                className="rounded-3xl bg-white px-4 py-3 text-sm font-medium text-textPrimary shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50"
+                className="rounded-3xl bg-panel px-4 py-3 text-sm font-medium text-textPrimary shadow-sm ring-1 ring-border transition hover:bg-border"
               >
                 Nueva factura
               </button>
               <button
                 type="button"
                 onClick={() => setPage('clientes')}
-                className="rounded-3xl bg-white px-4 py-3 text-sm font-medium text-textPrimary shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50"
+                className="rounded-3xl bg-panel px-4 py-3 text-sm font-medium text-textPrimary shadow-sm ring-1 ring-border transition hover:bg-border"
               >
                 Clientes
               </button>
@@ -497,7 +497,7 @@ function App() {
 
           {page === 'dashboard' && (
             <section className="space-y-6">
-              <div className="rounded-3xl bg-white p-6 shadow-panel">
+              <div className="rounded-3xl bg-panel p-6 shadow-panel">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                   <div>
                     <p className="text-sm text-textSecondary">Factura nueva</p>
@@ -509,7 +509,7 @@ function App() {
                       <select
                         value={invoiceClient}
                         onChange={(e) => handleInvoiceClientChange(e.target.value)}
-                        className="w-full rounded-2xl border border-border bg-slate-50 px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                        className="w-full rounded-2xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
                       >
                         {clientes.map((cliente) => (
                           <option key={cliente.id} value={cliente.id}>
@@ -524,20 +524,20 @@ function App() {
                         type="date"
                         value={invoiceDate}
                         onChange={(e) => setInvoiceDate(e.target.value)}
-                        className="w-full rounded-2xl border border-border bg-slate-50 px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                        className="w-full rounded-2xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
                       />
                     </label>
                   </div>
                 </div>
                 <div className="mt-6 overflow-hidden rounded-3xl border border-border">
-                  <div className="grid grid-cols-[2fr_80px_120px_120px_80px] gap-4 bg-slate-50 px-5 py-4 text-sm uppercase tracking-[0.12em] text-textSecondary">
+                  <div className="grid grid-cols-[2fr_80px_120px_120px_80px] gap-4 bg-surface px-5 py-4 text-sm uppercase tracking-[0.12em] text-textSecondary">
                     <span>Producto</span>
                     <span>Cant.</span>
                     <span>Precio</span>
                     <span>Subtotal</span>
                     <span></span>
                   </div>
-                  <div className="divide-y divide-slate-200 bg-white">
+                  <div className="divide-y divide-slate-200 bg-panel">
                     {rows.map((row) => {
                       const matches = row.query ? filteredProducts(row.query) : [];
                       return (
@@ -547,16 +547,16 @@ function App() {
                               value={row.query}
                               onChange={(event) => handleRowChange(row.rowKey, 'query', event.target.value)}
                               placeholder="Buscar producto..."
-                              className="w-full rounded-3xl border border-border bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-accent"
+                              className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm outline-none transition focus:border-accent"
                             />
                             {row.query && matches.length > 0 && (
-                              <div className="absolute left-0 top-full z-20 mt-2 max-h-60 w-full overflow-auto rounded-3xl border border-border bg-white shadow-xl">
+                              <div className="absolute left-0 top-full z-20 mt-2 max-h-60 w-full overflow-auto rounded-3xl border border-border bg-panel shadow-xl">
                                 {matches.slice(0, 6).map((product) => (
                                   <button
                                     key={product.id}
                                     type="button"
                                     onClick={() => updateRowProduct(row.rowKey, product)}
-                                    className="w-full px-4 py-3 text-left text-sm text-textPrimary transition hover:bg-slate-50"
+                                    className="w-full px-4 py-3 text-left text-sm text-textPrimary transition hover:bg-surface"
                                   >
                                     <span className="font-semibold">{product.nombre}</span>
                                     <span className="ml-2 text-textSecondary">{product.talle} • {product.color}</span>
@@ -576,7 +576,7 @@ function App() {
                               min={1}
                               value={row.cant}
                               onChange={(event) => handleRowChange(row.rowKey, 'cant', Number(event.target.value))}
-                              className="w-full rounded-3xl border border-border bg-slate-50 px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                              className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
                             />
                           </label>
                           <div>
@@ -585,7 +585,7 @@ function App() {
                               onChange={(event) => handleRowChange(row.rowKey, 'precio', Number(event.target.value))}
                               type="number"
                               min={0}
-                              className="w-full rounded-3xl border border-border bg-slate-50 px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                              className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
                             />
                           </div>
                           <div className="flex items-center text-sm text-textPrimary">
@@ -595,7 +595,7 @@ function App() {
                             <button
                               type="button"
                               onClick={() => removeRow(row.rowKey)}
-                              className="rounded-full px-3 py-2 text-sm text-red-600 transition hover:bg-red-50"
+                              className="rounded-full px-3 py-2 text-sm text-red-600 transition hover:bg-red-900"
                             >
                               Eliminar
                             </button>
@@ -605,11 +605,11 @@ function App() {
                     })}
                   </div>
                 </div>
-                <div className="mt-6 flex flex-col gap-4 rounded-3xl bg-slate-50 p-5 sm:flex-row sm:items-center sm:justify-between">
+                <div className="mt-6 flex flex-col gap-4 rounded-3xl bg-surface p-5 sm:flex-row sm:items-center sm:justify-between">
                   <button
                     type="button"
                     onClick={addRow}
-                    className="inline-flex items-center justify-center rounded-3xl bg-white px-5 py-3 text-sm font-medium text-textPrimary shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50"
+                    className="inline-flex items-center justify-center rounded-3xl bg-panel px-5 py-3 text-sm font-medium text-textPrimary shadow-sm ring-1 ring-border transition hover:bg-surface"
                   >
                     Añadir
                   </button>
@@ -635,7 +635,7 @@ function App() {
 
           {page === 'clientes' && (
             <section className="space-y-6">
-              <div className="rounded-3xl bg-white p-6 shadow-panel">
+              <div className="rounded-3xl bg-panel p-6 shadow-panel">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <h3 className="text-2xl font-semibold">Clientes</h3>
@@ -654,7 +654,7 @@ function App() {
                 <div className="mt-6 overflow-hidden rounded-3xl border border-border">
                   <div className="overflow-x-auto">
                     <table className="w-full border-collapse text-sm min-w-[700px]">
-                      <thead className="bg-slate-50 text-textSecondary">
+                      <thead className="bg-surface text-textSecondary">
                         <tr>
                           <th className="px-3 py-4 text-left sm:px-5">Nombre</th>
                           <th className="px-3 py-4 text-left sm:px-5 hidden sm:table-cell">Categoría</th>
@@ -671,7 +671,7 @@ function App() {
                         const total = clienteFacturas.reduce((sum, factura) => sum + factura.total, 0) - clientePagos.reduce((sum, pago) => sum + pago.monto, 0);
                         const lastPago = clientePagos.map((p) => p.fecha).sort().reverse()[0] || '—';
                         return (
-                          <tr key={cliente.id} className="border-t border-slate-200 hover:bg-slate-50">
+                          <tr key={cliente.id} className="border-t border-border hover:bg-surface">
                             <td
                               className="cursor-pointer px-3 py-4 sm:px-5"
                               onClick={() => {
@@ -697,7 +697,7 @@ function App() {
                                     setPaymentClienteId(cliente.id);
                                     setPaymentModalOpen(true);
                                   }}
-                                  className="rounded-3xl bg-blue-100 px-3 py-2 text-xs text-blue-700 transition hover:bg-blue-200"
+                                  className="rounded-3xl bg-blue-900 px-3 py-2 text-xs text-blue-300 transition hover:bg-blue-800"
                                 >
                                   Pago
                                 </button>
@@ -711,7 +711,7 @@ function App() {
                                 <button
                                   type="button"
                                   onClick={() => handleDeleteClient(cliente.id)}
-                                  className="rounded-3xl bg-red-100 px-3 py-2 text-xs text-red-700 transition hover:bg-red-200"
+                                  className="rounded-3xl bg-red-900 px-3 py-2 text-xs text-red-300 transition hover:bg-red-200"
                                 >
                                   Eliminar
                                 </button>
@@ -730,7 +730,7 @@ function App() {
 
           {page === 'cuenta' && clienteActual && (
             <section className="space-y-6">
-              <div className="rounded-3xl bg-white p-6 shadow-panel">
+              <div className="rounded-3xl bg-panel p-6 shadow-panel">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <h3 className="text-2xl font-semibold">{clienteActual.nombre}</h3>
@@ -748,27 +748,27 @@ function App() {
                   </button>
                 </div>
                 <div className="mt-6 grid gap-4 sm:grid-cols-3">
-                  <div className="rounded-3xl border border-border bg-slate-50 p-5">
+                  <div className="rounded-3xl border border-border bg-surface p-5">
                     <p className="text-sm text-textSecondary">Saldo pendiente</p>
                     <p className="mt-2 text-3xl font-semibold">{formatMoney(saldoPendiente)}</p>
                   </div>
-                  <div className="rounded-3xl border border-border bg-slate-50 p-5">
+                  <div className="rounded-3xl border border-border bg-surface p-5">
                     <p className="text-sm text-textSecondary">Total comprado</p>
                     <p className="mt-2 text-3xl font-semibold">{formatMoney(totalComprado)}</p>
                   </div>
-                  <div className="rounded-3xl border border-border bg-slate-50 p-5">
+                  <div className="rounded-3xl border border-border bg-surface p-5">
                     <p className="text-sm text-textSecondary">Total pagado</p>
                     <p className="mt-2 text-3xl font-semibold">{formatMoney(totalPagado)}</p>
                   </div>
                 </div>
               </div>
               <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-                <div className="rounded-3xl bg-white p-6 shadow-panel">
+                <div className="rounded-3xl bg-panel p-6 shadow-panel">
                   <h4 className="text-xl font-semibold">Compras</h4>
                   <div className="mt-5 overflow-hidden rounded-3xl border border-border">
                     <div className="overflow-x-auto">
                       <table className="w-full border-collapse text-sm min-w-[500px]">
-                      <thead className="bg-slate-50 text-textSecondary">
+                      <thead className="bg-surface text-textSecondary">
                         <tr>
                           <th className="px-5 py-4 text-left">Fecha</th>
                           <th className="px-5 py-4 text-left">Productos</th>
@@ -780,7 +780,7 @@ function App() {
                         {facturasPorCliente.map((factura, index) => {
                           const acumulado = facturasPorCliente.slice(0, index + 1).reduce((sum, item) => sum + item.total, 0);
                           return (
-                            <tr key={factura.id} className="border-t border-slate-200 hover:bg-slate-50">
+                            <tr key={factura.id} className="border-t border-border hover:bg-surface">
                               <td className="px-5 py-4 text-textSecondary">{factura.fecha}</td>
                               <td className="px-5 py-4">
                                 <div className="max-w-xs text-sm text-textSecondary">
@@ -801,14 +801,14 @@ function App() {
                     </div>
                   </div>
                 </div>
-                <div className="rounded-3xl bg-white p-6 shadow-panel">
+                <div className="rounded-3xl bg-panel p-6 shadow-panel">
                   <h4 className="text-xl font-semibold">Pagos</h4>
                   <div className="mt-5 space-y-4">
                     {pagosPorCliente.length === 0 ? (
                       <p className="text-sm text-textSecondary">No hay pagos registrados aún.</p>
                     ) : (
                       pagosPorCliente.map((pago) => (
-                        <div key={pago.id} className="rounded-3xl border border-border bg-slate-50 p-4">
+                        <div key={pago.id} className="rounded-3xl border border-border bg-surface p-4">
                           <p className="text-sm text-textSecondary">{pago.fecha} • {pago.forma}</p>
                           <p className="mt-2 text-xl font-semibold">{formatMoney(pago.monto)}</p>
                           {pago.notas && <p className="mt-2 text-sm text-textSecondary">{pago.notas}</p>}
@@ -823,12 +823,12 @@ function App() {
 
           {page === 'historial' && (
             <section className="space-y-6">
-              <div className="rounded-3xl bg-white p-6 shadow-panel">
+              <div className="rounded-3xl bg-panel p-6 shadow-panel">
                 <h3 className="text-2xl font-semibold">Historial de facturas</h3>
                 <p className="mt-1 text-sm text-textSecondary">Todas las facturas generadas, ordenadas por fecha.</p>
                 <div className="mt-6 overflow-hidden rounded-3xl border border-border">
                   <table className="w-full border-collapse text-sm">
-                    <thead className="bg-slate-50 text-textSecondary">
+                    <thead className="bg-surface text-textSecondary">
                       <tr>
                         <th className="px-5 py-4 text-left">N°</th>
                         <th className="px-5 py-4 text-left">Fecha</th>
@@ -841,7 +841,7 @@ function App() {
                       {orderedFacturas.map((factura, index) => {
                         const cliente = clientes.find((item) => item.id === factura.clienteId);
                         return (
-                          <tr key={factura.id} className="border-t border-slate-200 hover:bg-slate-50">
+                          <tr key={factura.id} className="border-t border-border hover:bg-surface">
                             <td className="px-5 py-4 text-textSecondary">{index + 1}</td>
                             <td className="px-5 py-4 text-textSecondary">{factura.fecha}</td>
                             <td className="px-5 py-4">{cliente?.nombre ?? 'Cliente eliminado'}</td>
@@ -861,7 +861,7 @@ function App() {
 
           {page === 'nuevo-cliente' && (
             <section className="space-y-6">
-              <div className="rounded-3xl bg-white p-6 shadow-panel sm:p-8">
+              <div className="rounded-3xl bg-panel p-6 shadow-panel sm:p-8">
                 <h3 className="text-2xl font-semibold">{editingClient ? 'Editar cliente' : 'Nuevo cliente'}</h3>
                 <p className="mt-1 text-sm text-textSecondary">
                   {editingClient ? 'Modifica los datos del cliente seleccionado.' : 'Registra un cliente nuevo para que aparezca en la gestión.'}
@@ -872,7 +872,7 @@ function App() {
                     <input
                       value={newClientNombre}
                       onChange={(e) => setNewClientNombre(e.target.value)}
-                      className="w-full rounded-3xl border border-border bg-slate-50 px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                      className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
                     />
                   </label>
                   <label className="space-y-2 text-sm text-textSecondary">
@@ -880,7 +880,7 @@ function App() {
                     <input
                       value={newClientTel}
                       onChange={(e) => setNewClientTel(e.target.value)}
-                      className="w-full rounded-3xl border border-border bg-slate-50 px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                      className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
                     />
                   </label>
                   <label className="space-y-2 text-sm text-textSecondary">
@@ -889,7 +889,7 @@ function App() {
                       type="email"
                       value={newClientEmail}
                       onChange={(e) => setNewClientEmail(e.target.value)}
-                      className="w-full rounded-3xl border border-border bg-slate-50 px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                      className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
                     />
                   </label>
                   <label className="space-y-2 text-sm text-textSecondary">
@@ -897,7 +897,7 @@ function App() {
                     <select
                       value={newClientCat}
                       onChange={(e) => setNewClientCat(e.target.value as 'general' | 'especial')}
-                      className="w-full rounded-3xl border border-border bg-slate-50 px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                      className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
                     >
                       <option value="general">General</option>
                       <option value="especial">Especial</option>
@@ -909,7 +909,7 @@ function App() {
                       value={newClientNotas}
                       onChange={(e) => setNewClientNotas(e.target.value)}
                       rows={4}
-                      className="w-full rounded-3xl border border-border bg-slate-50 px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                      className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
                     />
                   </label>
                 </div>
@@ -926,7 +926,7 @@ function App() {
                         setNewClientNotas('');
                         setPage('clientes');
                       }}
-                      className="rounded-3xl bg-white px-6 py-3 text-sm font-semibold text-textPrimary shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50"
+                      className="rounded-3xl bg-panel px-6 py-3 text-sm font-semibold text-textPrimary shadow-sm ring-1 ring-border transition hover:bg-surface"
                     >
                       Cancelar
                     </button>
@@ -945,7 +945,7 @@ function App() {
 
           {page === 'productos' && (
             <section className="space-y-6">
-              <div className="rounded-3xl bg-white p-6 shadow-panel">
+              <div className="rounded-3xl bg-panel p-6 shadow-panel">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <h3 className="text-2xl font-semibold">Productos</h3>
@@ -956,7 +956,7 @@ function App() {
                       value={productFilter}
                       onChange={(e) => setProductFilter(e.target.value)}
                       placeholder="Buscar producto"
-                      className="rounded-3xl border border-border bg-slate-50 px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                      className="rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
                     />
                     <button
                       type="button"
@@ -982,7 +982,7 @@ function App() {
                   <div className="overflow-hidden rounded-3xl border border-border">
                     <div className="overflow-x-auto">
                       <table className="w-full border-collapse text-sm min-w-[600px]">
-                        <thead className="bg-slate-50 text-textSecondary">
+                        <thead className="bg-surface text-textSecondary">
                           <tr>
                             <th className="px-3 py-4 text-left sm:px-5">Nombre</th>
                             <th className="px-3 py-4 text-left sm:px-5 hidden sm:table-cell">Categoría</th>
@@ -994,7 +994,7 @@ function App() {
                         </thead>
                       <tbody>
                         {productList.map((item) => (
-                          <tr key={item.id} className="border-t border-slate-200 hover:bg-slate-50">
+                          <tr key={item.id} className="border-t border-border hover:bg-surface">
                             <td className="px-3 py-4 sm:px-5">
                               <div className="font-medium">{item.nombre}</div>
                               <div className="mt-1 text-xs text-textSecondary sm:hidden">
@@ -1011,14 +1011,14 @@ function App() {
                               <button
                                 type="button"
                                 onClick={() => handleProductEdit(item)}
-                                className="mr-2 rounded-3xl bg-slate-100 px-3 py-2 text-xs text-textPrimary transition hover:bg-slate-200"
+                                className="mr-2 rounded-3xl bg-surface px-3 py-2 text-xs text-textPrimary transition hover:bg-border"
                               >
                                 Editar
                               </button>
                               <button
                                 type="button"
                                 onClick={() => handleProductDelete(item.id)}
-                                className="rounded-3xl bg-red-50 px-3 py-2 text-xs text-red-600 transition hover:bg-red-100"
+                                className="rounded-3xl bg-red-900 px-3 py-2 text-xs text-red-600 transition hover:bg-red-900"
                               >
                                 Borrar
                               </button>
@@ -1029,7 +1029,7 @@ function App() {
                     </table>
                     </div>
                   </div>
-                  <div id="formulario-producto" className="rounded-3xl border border-border bg-slate-50 p-6">
+                  <div id="formulario-producto" className="rounded-3xl border border-border bg-surface p-6">
                     <h4 className="text-xl font-semibold">{productEdit ? 'Editar producto' : 'Agregar producto'}</h4>
                     <div className="mt-6 space-y-4">
                       <label className="space-y-2 text-sm text-textSecondary">
@@ -1037,7 +1037,7 @@ function App() {
                         <input
                           value={newProducto.nombre}
                           onChange={(e) => setNewProducto((prev) => ({ ...prev, nombre: e.target.value }))}
-                          className="w-full rounded-3xl border border-border bg-white px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                          className="w-full rounded-3xl border border-border bg-panel px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
                         />
                       </label>
                       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -1046,7 +1046,7 @@ function App() {
                           <input
                             value={newProducto.categoria}
                             onChange={(e) => setNewProducto((prev) => ({ ...prev, categoria: e.target.value }))}
-                            className="w-full rounded-3xl border border-border bg-white px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                            className="w-full rounded-3xl border border-border bg-panel px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
                           />
                         </label>
                         <label className="space-y-2 text-sm text-textSecondary">
@@ -1054,7 +1054,7 @@ function App() {
                           <input
                             value={newProducto.talle}
                             onChange={(e) => setNewProducto((prev) => ({ ...prev, talle: e.target.value }))}
-                            className="w-full rounded-3xl border border-border bg-white px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                            className="w-full rounded-3xl border border-border bg-panel px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
                           />
                         </label>
                       </div>
@@ -1063,7 +1063,7 @@ function App() {
                         <input
                           value={newProducto.color}
                           onChange={(e) => setNewProducto((prev) => ({ ...prev, color: e.target.value }))}
-                          className="w-full rounded-3xl border border-border bg-white px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                          className="w-full rounded-3xl border border-border bg-panel px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
                         />
                       </label>
                       <label className="space-y-2 text-sm text-textSecondary">
@@ -1072,7 +1072,7 @@ function App() {
                           type="number"
                           value={newProducto.precio}
                           onChange={(e) => setNewProducto((prev) => ({ ...prev, precio: Number(e.target.value) }))}
-                          className="w-full rounded-3xl border border-border bg-white px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                          className="w-full rounded-3xl border border-border bg-panel px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
                         />
                       </label>
                       <label className="space-y-2 text-sm text-textSecondary">
@@ -1081,7 +1081,7 @@ function App() {
                           type="number"
                           value={newProducto.precioEsp}
                           onChange={(e) => setNewProducto((prev) => ({ ...prev, precioEsp: Number(e.target.value) }))}
-                          className="w-full rounded-3xl border border-border bg-white px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                          className="w-full rounded-3xl border border-border bg-panel px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
                         />
                       </label>
                     </div>
@@ -1093,7 +1093,7 @@ function App() {
                             setProductEdit(null);
                             setNewProducto({ nombre: '', categoria: '', talle: '', color: '', precio: 0, precioEsp: 0 });
                           }}
-                          className="rounded-3xl bg-white px-5 py-3 text-sm font-semibold text-textPrimary shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50"
+                          className="rounded-3xl bg-panel px-5 py-3 text-sm font-semibold text-textPrimary shadow-sm ring-1 ring-border transition hover:bg-surface"
                         >
                           Cancelar
                         </button>
@@ -1114,7 +1114,7 @@ function App() {
 
           {page === 'backup' && (
             <section className="space-y-6">
-              <div className="rounded-3xl bg-white p-6 shadow-panel">
+              <div className="rounded-3xl bg-panel p-6 shadow-panel">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <h3 className="text-2xl font-semibold">Respaldo de datos</h3>
@@ -1129,14 +1129,14 @@ function App() {
                   </button>
                 </div>
                 <div className="mt-6 grid gap-6 lg:grid-cols-2">
-                  <div className="rounded-3xl border border-border bg-slate-50 p-6">
+                  <div className="rounded-3xl border border-border bg-surface p-6">
                     <h4 className="text-lg font-semibold">Exportar</h4>
                     <p className="mt-2 text-sm text-textSecondary">Guarda un archivo JSON con todos los clientes, productos, facturas y pagos.</p>
-                    <div className="mt-4 rounded-3xl bg-white p-4 border border-border">
+                    <div className="mt-4 rounded-3xl bg-panel p-4 border border-border">
                       <p className="text-sm text-textSecondary">Haz clic en "Descargar backup" y luego guarda el archivo en tu computadora.</p>
                     </div>
                   </div>
-                  <div className="rounded-3xl border border-border bg-slate-50 p-6">
+                  <div className="rounded-3xl border border-border bg-surface p-6">
                     <h4 className="text-lg font-semibold">Importar</h4>
                     <p className="mt-2 text-sm text-textSecondary">Carga un backup JSON para restaurar los datos en este navegador.</p>
                     <input
@@ -1146,19 +1146,19 @@ function App() {
                         const file = event.target.files?.[0];
                         if (file) handleBackupFile(file);
                       }}
-                      className="mt-4 w-full rounded-3xl border border-border bg-white px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                      className="mt-4 w-full rounded-3xl border border-border bg-panel px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
                     />
                     <textarea
                       value={backupText}
                       onChange={(event) => setBackupText(event.target.value)}
                       placeholder="O pega aquí el contenido JSON del backup"
                       rows={8}
-                      className="mt-4 w-full rounded-3xl border border-border bg-white px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                      className="mt-4 w-full rounded-3xl border border-border bg-panel px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
                     />
                     <button
                       type="button"
                       onClick={() => handleBackupRestore(backupText)}
-                      className="mt-4 rounded-3xl bg-white px-5 py-3 text-sm font-semibold text-textPrimary shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50"
+                      className="mt-4 rounded-3xl bg-panel px-5 py-3 text-sm font-semibold text-textPrimary shadow-sm ring-1 ring-border transition hover:bg-surface"
                     >
                       Restaurar desde JSON
                     </button>
@@ -1179,7 +1179,7 @@ function App() {
             <select
               value={paymentClienteId}
               onChange={(e) => setPaymentClienteId(e.target.value)}
-              className="w-full rounded-3xl border border-border bg-slate-50 px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+              className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
             >
               {clientes.map((cliente) => (
                 <option key={cliente.id} value={cliente.id}>
@@ -1195,7 +1195,7 @@ function App() {
                 type="date"
                 value={paymentDate}
                 onChange={(e) => setPaymentDate(e.target.value)}
-                className="w-full rounded-3xl border border-border bg-slate-50 px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
               />
             </label>
             <label className="space-y-2 text-sm text-textSecondary">
@@ -1205,7 +1205,7 @@ function App() {
                 min={0}
                 value={paymentAmount}
                 onChange={(e) => setPaymentAmount(Number(e.target.value))}
-                className="w-full rounded-3xl border border-border bg-slate-50 px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
               />
             </label>
           </div>
@@ -1214,7 +1214,7 @@ function App() {
             <select
               value={paymentForm}
               onChange={(e) => setPaymentForm(e.target.value as FormaPago)}
-              className="w-full rounded-3xl border border-border bg-slate-50 px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+              className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
             >
               {formasPago.map((forma) => (
                 <option key={forma} value={forma}>
@@ -1229,14 +1229,14 @@ function App() {
               value={paymentNotes}
               onChange={(e) => setPaymentNotes(e.target.value)}
               rows={4}
-              className="w-full rounded-3xl border border-border bg-slate-50 px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+              className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
             />
           </label>
           <div className="flex justify-end gap-3">
             <button
               type="button"
               onClick={() => setPaymentModalOpen(false)}
-              className="rounded-3xl bg-white px-5 py-3 text-sm font-semibold text-textPrimary shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50"
+              className="rounded-3xl bg-panel px-5 py-3 text-sm font-semibold text-textPrimary shadow-sm ring-1 ring-border transition hover:bg-surface"
             >
               Cancelar
             </button>
