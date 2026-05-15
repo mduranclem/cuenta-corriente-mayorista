@@ -17,7 +17,8 @@
       "Bash(git commit -m \"Fix: Agregar configuracion Netlify para Node 18 y variables de entorno\")",
       "Bash(git push origin main)",
       "WebFetch(domain:github.com)",
-      "Bash(git ls-tree -r HEAD --name-only)"
+      "Bash(git ls-tree -r HEAD --name-only)",
+      "Bash(git commit -m \"Feat: Sistema de notificaciones Toast y datos limpios\n\n- Eliminar todos los datos demo (clientes, productos, facturas, pagos)\n- Crear componente Toast elegante con animaciones \n- Agregar hook useToast para manejar notificaciones\n- Notificaciones de éxito para todas las acciones:\n  * Clientes: agregar, editar, eliminar\n  * Productos: agregar, editar, eliminar (con confirmación)\n  * Facturas: crear exitosamente\n  * Pagos: registrar exitosamente\n  * Backup: descargar y restaurar\n- App inicia completamente vacía y lista para uso\")"
     ],
     "deny": [],
     "ask": []

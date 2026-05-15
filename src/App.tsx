@@ -956,8 +956,16 @@ function App() {
                       onClick={() => {
                         setProductEdit(null);
                         setNewProducto({ nombre: '', categoria: '', talle: '', color: '', precio: 0, precioEsp: 0 });
+                        success('Formulario listo para nuevo producto');
+                        // Hacer scroll al formulario
+                        setTimeout(() => {
+                          const formulario = document.getElementById('formulario-producto');
+                          if (formulario) {
+                            formulario.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                          }
+                        }, 100);
                       }}
-                      className="rounded-3xl bg-slate-100 px-5 py-3 text-sm font-semibold text-textPrimary transition hover:bg-slate-200"
+                      className="rounded-3xl bg-accent px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-600"
                     >
                       Nuevo producto
                     </button>
@@ -1007,7 +1015,7 @@ function App() {
                       </tbody>
                     </table>
                   </div>
-                  <div className="rounded-3xl border border-border bg-slate-50 p-6">
+                  <div id="formulario-producto" className="rounded-3xl border border-border bg-slate-50 p-6">
                     <h4 className="text-xl font-semibold">{productEdit ? 'Editar producto' : 'Agregar producto'}</h4>
                     <div className="mt-6 space-y-4">
                       <label className="space-y-2 text-sm text-textSecondary">
