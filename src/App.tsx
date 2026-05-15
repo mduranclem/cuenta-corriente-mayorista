@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Modal } from './components/Modal';
+import { Toast } from './components/Toast';
+import { useToast } from './hooks/useToast';
 import type { Cliente, Factura, FacturaItem, FormaPago, Producto } from './types';
 import type { BackupPayload } from './lib/storage';
 import {
@@ -28,6 +30,7 @@ const today = new Date().toISOString().slice(0, 10);
 const formasPago: FormaPago[] = ['Efectivo', 'Transferencia', 'Cheque', 'Tarjeta'];
 
 function App() {
+  const { toasts, removeToast, success, error } = useToast();
   const [page, setPage] = useState<Page>('dashboard');
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
@@ -236,6 +239,7 @@ function App() {
       { rowKey: 'r0', prodId: '', nombre: '', categoria: '', talle: '', color: '', cant: 1, precio: 0, query: '' },
     ]);
     setInvoiceDate(today);
+    success('Factura creada exitosamente');
     setPage('historial');
   };
 
@@ -256,6 +260,7 @@ function App() {
       setClientes(nextClientes);
       await saveClientes(nextClientes);
       setEditingClient(null);
+      success('Cliente actualizado exitosamente');
     } else {
       // Crear nuevo cliente
       const cliente: Cliente = {
@@ -269,6 +274,7 @@ function App() {
       const nextClientes = [cliente, ...clientes];
       setClientes(nextClientes);
       await saveClientes(nextClientes);
+      success('Cliente agregado exitosamente');
     }
 
     setNewClientNombre('');
@@ -315,6 +321,7 @@ function App() {
     const nextClientes = clientes.filter(c => c.id !== clientId);
     setClientes(nextClientes);
     await saveClientes(nextClientes);
+    success('Cliente eliminado exitosamente');
 
     // Si estaba seleccionado, cambiar a otro cliente
     if (selectedClientId === clientId && nextClientes.length > 0) {
@@ -341,6 +348,7 @@ function App() {
     setPaymentModalOpen(false);
     setPaymentAmount(0);
     setPaymentNotes('');
+    success('Pago registrado exitosamente');
   };
 
   const handleProductSave = async () => {
@@ -360,6 +368,7 @@ function App() {
       setProductos(nextProductos);
       await saveProductos(nextProductos);
       setProductEdit(null);
+      success('Producto actualizado exitosamente');
     } else {
       const nuevo: Producto = {
         id: `p${Date.now()}`,
@@ -368,6 +377,7 @@ function App() {
       const nextProductos = [nuevo, ...productos];
       setProductos(nextProductos);
       await saveProductos(nextProductos);
+      success('Producto agregado exitosamente');
     }
     setNewProducto({ nombre: '', categoria: '', talle: '', color: '', precio: 0, precioEsp: 0 });
   };
@@ -386,9 +396,15 @@ function App() {
   };
 
   const handleProductDelete = async (id: string) => {
+    const producto = productos.find(p => p.id === id);
+    if (!producto) return;
+
+    if (!window.confirm(`¿Estás seguro de eliminar "${producto.nombre}"?`)) return;
+
     const next = productos.filter((item) => item.id !== id);
     setProductos(next);
     await saveProductos(next);
+    success('Producto eliminado exitosamente');
   };
 
   const handleBackupDownload = async () => {
@@ -402,6 +418,7 @@ function App() {
     anchor.click();
     document.body.removeChild(anchor);
     URL.revokeObjectURL(url);
+    success('Backup descargado exitosamente');
   };
 
   const handleBackupRestore = async (rawText: string) => {
@@ -423,6 +440,7 @@ function App() {
       setFacturas(parsed.facturas);
       setPagos(parsed.pagos);
       setBackupMessage('Datos restaurados correctamente');
+      success('Backup restaurado exitosamente');
     } catch (error) {
       setBackupError(error instanceof Error ? error.message : 'No se pudo restaurar el backup');
     }
@@ -1208,6 +1226,8 @@ function App() {
           </div>
         </div>
       </Modal>
+
+      <Toast toasts={toasts} onRemove={removeToast} />
     </div>
   );
 }

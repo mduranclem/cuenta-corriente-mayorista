@@ -13,7 +13,11 @@
       "Bash(git commit -m \"Sistema cuenta corriente con editar/eliminar clientes\")",
       "Bash(git remote add origin https://github.com/mduranclem/cuenta-corriente-mayorista.git)",
       "Bash(git branch -M main)",
-      "Bash(git push -u origin main)"
+      "Bash(git push -u origin main)",
+      "Bash(git commit -m \"Fix: Agregar configuracion Netlify para Node 18 y variables de entorno\")",
+      "Bash(git push origin main)",
+      "WebFetch(domain:github.com)",
+      "Bash(git ls-tree -r HEAD --name-only)"
     ],
     "deny": [],
     "ask": []

@@ -119,3 +119,4 @@ Por defecto la aplicación usa `localStorage` como respaldo. Si arrancás el bac
 - Vercel: https://vercel.com
 - Netlify: https://www.netlify.com
 - Surge: https://surge.sh
+# Forzar refresh de Netlify
