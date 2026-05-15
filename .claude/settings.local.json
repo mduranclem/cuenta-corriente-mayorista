@@ -7,7 +7,9 @@
       "Bash(pkill -f \"node server/index.js\")",
       "Bash(chmod +x \"C:\\Users\\USER\\Documents\\n8n.strong\\SISTEMA.MAMA\\inicio_rapido.sh\")",
       "WebFetch(domain:extraordinary-lollipop-84a93f.netlify.app)",
-      "Bash(curl -s https://extraordinary-lollipop-84a93f.netlify.app)"
+      "Bash(curl -s https://extraordinary-lollipop-84a93f.netlify.app)",
+      "Bash(git init)",
+      "Bash(git add .)"
     ],
     "deny": [],
     "ask": []
