@@ -9,7 +9,11 @@
       "WebFetch(domain:extraordinary-lollipop-84a93f.netlify.app)",
       "Bash(curl -s https://extraordinary-lollipop-84a93f.netlify.app)",
       "Bash(git init)",
-      "Bash(git add .)"
+      "Bash(git add .)",
+      "Bash(git commit -m \"Sistema cuenta corriente con editar/eliminar clientes\")",
+      "Bash(git remote add origin https://github.com/mduranclem/cuenta-corriente-mayorista.git)",
+      "Bash(git branch -M main)",
+      "Bash(git push -u origin main)"
     ],
     "deny": [],
     "ask": []
