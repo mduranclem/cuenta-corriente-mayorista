@@ -1,9 +1,0 @@
-node_modules
-npm-debug.log*
-dist
-.vite
-.DS_Store
-.env
-server/data/state.json
-server/data/db.sqlite
-.git

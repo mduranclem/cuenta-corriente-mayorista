@@ -1,9 +1,0 @@
-node_modules/
-dist/
-.vite/
-.DS_Store
-.env
-*.log
-.vercel
-server/data/db.sqlite
-server/data/state.json
