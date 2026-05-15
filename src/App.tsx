@@ -471,13 +471,13 @@ function App() {
     <div className="min-h-screen bg-surface text-textPrimary">
       <div className="lg:flex">
         <Sidebar active={page} onSelect={setPage} />
-        <main className="flex-1 px-4 py-6 lg:px-10">
+        <main className="flex-1 px-4 py-6 pb-20 lg:px-10 lg:pb-6">
           <div className="mb-8 grid gap-4 lg:grid-cols-[1fr_300px] lg:items-center">
             <div>
               <p className="text-sm uppercase tracking-[0.2em] text-textSecondary">Portal</p>
-              <h2 className="mt-3 text-3xl font-semibold">Cuenta corriente mayorista</h2>
+              <h2 className="mt-3 text-xl font-semibold sm:text-3xl">Cuenta corriente mayorista</h2>
             </div>
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
               <button
                 type="button"
                 onClick={() => setPage('dashboard')}
@@ -652,17 +652,18 @@ function App() {
                   </button>
                 </div>
                 <div className="mt-6 overflow-hidden rounded-3xl border border-border">
-                  <table className="w-full border-collapse text-sm">
-                    <thead className="bg-slate-50 text-textSecondary">
-                      <tr>
-                        <th className="px-5 py-4 text-left">Nombre</th>
-                        <th className="px-5 py-4 text-left">Categoría</th>
-                        <th className="px-5 py-4 text-left">Teléfono</th>
-                        <th className="px-5 py-4 text-left">Saldo</th>
-                        <th className="px-5 py-4 text-left">Último pago</th>
-                        <th className="px-5 py-4 text-left">Acciones</th>
-                      </tr>
-                    </thead>
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse text-sm min-w-[700px]">
+                      <thead className="bg-slate-50 text-textSecondary">
+                        <tr>
+                          <th className="px-3 py-4 text-left sm:px-5">Nombre</th>
+                          <th className="px-3 py-4 text-left sm:px-5 hidden sm:table-cell">Categoría</th>
+                          <th className="px-3 py-4 text-left sm:px-5 hidden md:table-cell">Teléfono</th>
+                          <th className="px-3 py-4 text-left sm:px-5">Saldo</th>
+                          <th className="px-3 py-4 text-left sm:px-5 hidden lg:table-cell">Último pago</th>
+                          <th className="px-3 py-4 text-left sm:px-5">Acciones</th>
+                        </tr>
+                      </thead>
                     <tbody>
                       {clientes.map((cliente) => {
                         const clienteFacturas = facturas.filter((factura) => factura.clienteId === cliente.id);
@@ -672,7 +673,7 @@ function App() {
                         return (
                           <tr key={cliente.id} className="border-t border-slate-200 hover:bg-slate-50">
                             <td
-                              className="cursor-pointer px-5 py-4"
+                              className="cursor-pointer px-3 py-4 sm:px-5"
                               onClick={() => {
                                 setSelectedClientId(cliente.id);
                                 setPage('cuenta');
@@ -680,12 +681,15 @@ function App() {
                             >
                               <div className="font-medium">{cliente.nombre}</div>
                               <div className="mt-1 text-xs text-textSecondary">{cliente.email}</div>
+                              <div className="mt-1 text-xs text-textSecondary sm:hidden">
+                                {cliente.cat} • {cliente.tel}
+                              </div>
                             </td>
-                            <td className="px-5 py-4 capitalize text-textSecondary">{cliente.cat}</td>
-                            <td className="px-5 py-4 text-textSecondary">{cliente.tel}</td>
-                            <td className="px-5 py-4 font-semibold">{formatMoney(total)}</td>
-                            <td className="px-5 py-4 text-textSecondary">{lastPago}</td>
-                            <td className="px-5 py-4">
+                            <td className="px-3 py-4 capitalize text-textSecondary sm:px-5 hidden sm:table-cell">{cliente.cat}</td>
+                            <td className="px-3 py-4 text-textSecondary sm:px-5 hidden md:table-cell">{cliente.tel}</td>
+                            <td className="px-3 py-4 font-semibold sm:px-5">{formatMoney(total)}</td>
+                            <td className="px-3 py-4 text-textSecondary sm:px-5 hidden lg:table-cell">{lastPago}</td>
+                            <td className="px-3 py-4 sm:px-5">
                               <div className="flex gap-2">
                                 <button
                                   type="button"
@@ -718,6 +722,7 @@ function App() {
                       })}
                     </tbody>
                   </table>
+                  </div>
                 </div>
               </div>
             </section>
@@ -761,7 +766,8 @@ function App() {
                 <div className="rounded-3xl bg-white p-6 shadow-panel">
                   <h4 className="text-xl font-semibold">Compras</h4>
                   <div className="mt-5 overflow-hidden rounded-3xl border border-border">
-                    <table className="w-full border-collapse text-sm">
+                    <div className="overflow-x-auto">
+                      <table className="w-full border-collapse text-sm min-w-[500px]">
                       <thead className="bg-slate-50 text-textSecondary">
                         <tr>
                           <th className="px-5 py-4 text-left">Fecha</th>
@@ -792,6 +798,7 @@ function App() {
                         })}
                       </tbody>
                     </table>
+                    </div>
                   </div>
                 </div>
                 <div className="rounded-3xl bg-white p-6 shadow-panel">
@@ -973,28 +980,34 @@ function App() {
                 </div>
                 <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_420px]">
                   <div className="overflow-hidden rounded-3xl border border-border">
-                    <table className="w-full border-collapse text-sm">
-                      <thead className="bg-slate-50 text-textSecondary">
-                        <tr>
-                          <th className="px-5 py-4 text-left">Nombre</th>
-                          <th className="px-5 py-4 text-left">Categoría</th>
-                          <th className="px-5 py-4 text-left">Talle</th>
-                          <th className="px-5 py-4 text-left">Color</th>
-                          <th className="px-5 py-4 text-left">Precios</th>
-                          <th className="px-5 py-4"></th>
-                        </tr>
-                      </thead>
+                    <div className="overflow-x-auto">
+                      <table className="w-full border-collapse text-sm min-w-[600px]">
+                        <thead className="bg-slate-50 text-textSecondary">
+                          <tr>
+                            <th className="px-3 py-4 text-left sm:px-5">Nombre</th>
+                            <th className="px-3 py-4 text-left sm:px-5 hidden sm:table-cell">Categoría</th>
+                            <th className="px-3 py-4 text-left sm:px-5 hidden md:table-cell">Talle</th>
+                            <th className="px-3 py-4 text-left sm:px-5 hidden md:table-cell">Color</th>
+                            <th className="px-3 py-4 text-left sm:px-5">Precios</th>
+                            <th className="px-3 py-4 sm:px-5"></th>
+                          </tr>
+                        </thead>
                       <tbody>
                         {productList.map((item) => (
                           <tr key={item.id} className="border-t border-slate-200 hover:bg-slate-50">
-                            <td className="px-5 py-4">{item.nombre}</td>
-                            <td className="px-5 py-4 text-textSecondary capitalize">{item.categoria}</td>
-                            <td className="px-5 py-4 text-textSecondary">{item.talle}</td>
-                            <td className="px-5 py-4 text-textSecondary">{item.color}</td>
-                            <td className="px-5 py-4 text-textSecondary">
+                            <td className="px-3 py-4 sm:px-5">
+                              <div className="font-medium">{item.nombre}</div>
+                              <div className="mt-1 text-xs text-textSecondary sm:hidden">
+                                {item.categoria} • {item.talle} • {item.color}
+                              </div>
+                            </td>
+                            <td className="px-3 py-4 text-textSecondary capitalize sm:px-5 hidden sm:table-cell">{item.categoria}</td>
+                            <td className="px-3 py-4 text-textSecondary sm:px-5 hidden md:table-cell">{item.talle}</td>
+                            <td className="px-3 py-4 text-textSecondary sm:px-5 hidden md:table-cell">{item.color}</td>
+                            <td className="px-3 py-4 text-textSecondary sm:px-5">
                               {formatMoney(item.precio)}{item.precioEsp ? ` / ${formatMoney(item.precioEsp)}` : ''}
                             </td>
-                            <td className="px-5 py-4 text-right">
+                            <td className="px-3 py-4 text-right sm:px-5">
                               <button
                                 type="button"
                                 onClick={() => handleProductEdit(item)}
@@ -1014,6 +1027,7 @@ function App() {
                         ))}
                       </tbody>
                     </table>
+                    </div>
                   </div>
                   <div id="formulario-producto" className="rounded-3xl border border-border bg-slate-50 p-6">
                     <h4 className="text-xl font-semibold">{productEdit ? 'Editar producto' : 'Agregar producto'}</h4>
@@ -1026,22 +1040,24 @@ function App() {
                           className="w-full rounded-3xl border border-border bg-white px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
                         />
                       </label>
-                      <label className="space-y-2 text-sm text-textSecondary">
-                        Categoría
-                        <input
-                          value={newProducto.categoria}
-                          onChange={(e) => setNewProducto((prev) => ({ ...prev, categoria: e.target.value }))}
-                          className="w-full rounded-3xl border border-border bg-white px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
-                        />
-                      </label>
-                      <label className="space-y-2 text-sm text-textSecondary">
-                        Talle
-                        <input
-                          value={newProducto.talle}
-                          onChange={(e) => setNewProducto((prev) => ({ ...prev, talle: e.target.value }))}
-                          className="w-full rounded-3xl border border-border bg-white px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
-                        />
-                      </label>
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <label className="space-y-2 text-sm text-textSecondary">
+                          Categoría
+                          <input
+                            value={newProducto.categoria}
+                            onChange={(e) => setNewProducto((prev) => ({ ...prev, categoria: e.target.value }))}
+                            className="w-full rounded-3xl border border-border bg-white px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                          />
+                        </label>
+                        <label className="space-y-2 text-sm text-textSecondary">
+                          Talle
+                          <input
+                            value={newProducto.talle}
+                            onChange={(e) => setNewProducto((prev) => ({ ...prev, talle: e.target.value }))}
+                            className="w-full rounded-3xl border border-border bg-white px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                          />
+                        </label>
+                      </div>
                       <label className="space-y-2 text-sm text-textSecondary">
                         Color
                         <input

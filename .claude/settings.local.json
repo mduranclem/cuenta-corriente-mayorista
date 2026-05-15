@@ -20,7 +20,8 @@
       "Bash(git ls-tree -r HEAD --name-only)",
       "Bash(git commit -m \"Feat: Sistema de notificaciones Toast y datos limpios\n\n- Eliminar todos los datos demo (clientes, productos, facturas, pagos)\n- Crear componente Toast elegante con animaciones \n- Agregar hook useToast para manejar notificaciones\n- Notificaciones de éxito para todas las acciones:\n  * Clientes: agregar, editar, eliminar\n  * Productos: agregar, editar, eliminar (con confirmación)\n  * Facturas: crear exitosamente\n  * Pagos: registrar exitosamente\n  * Backup: descargar y restaurar\n- App inicia completamente vacía y lista para uso\")",
       "Bash(git commit -m \"Fix: Mejorar funcionalidad botón ''Nuevo producto''\n\n- Agregar notificación ''Formulario listo para nuevo producto''\n- Cambiar color del botón a accent (azul) para mayor visibilidad\n- Agregar scroll automático al formulario cuando se presiona el botón\n- Mejorar UX para que sea claro qué hace el botón\")",
-      "Bash(npm install @supabase/supabase-js)"
+      "Bash(npm install @supabase/supabase-js)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nFeat: Integración completa con base de datos Supabase\n\n- Migrar sistema de localStorage a Supabase PostgreSQL\n- Agregar cliente Supabase (@supabase/supabase-js) \n- Crear configuración de conexión con API keys\n- Reescribir storage.ts para usar operaciones CRUD de Supabase:\n  * Funciones de conversión entre tipos de app y base de datos\n  * Carga de datos con relaciones complejas (facturas + items)\n  * Operaciones atómicas con manejo de errores\n  * Soporte para backup/restore completo\n- Sistema ahora persiste datos en la nube permanentemente\n- Eliminar dependencia de localStorage y API local\n\n🤖 Generated with [Claude Code](https://claude.ai/code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")"
     ],
     "deny": [],
     "ask": []
