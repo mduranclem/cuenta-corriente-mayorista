@@ -191,19 +191,30 @@ function App() {
   const [authMode, setAuthMode] = useState<'login' | 'register' | 'first-admin'>('login');
   const [usuariosPendientes, setUsuariosPendientes] = useState<any[]>([]);
   const [needsFirstAdmin, setNeedsFirstAdmin] = useState(false);
+  const [creatingAdmin, setCreatingAdmin] = useState(false);
 
   // Verificar primer admin al cargar
   useEffect(() => {
     const checkFirstAdmin = async () => {
       try {
+        console.log('🔍 Verificando configuración inicial del sistema...');
         const needsAdmin = await verificarPrimerAdmin();
+        console.log('📊 ¿Necesita primer admin?:', needsAdmin);
+
         setNeedsFirstAdmin(needsAdmin);
         if (needsAdmin) {
           setAuthMode('first-admin');
           setPage('login');
         }
-      } catch (error) {
-        console.error('Error verificando primer admin:', error);
+      } catch (err: any) {
+        console.error('❌ Error verificando primer admin:', err);
+
+        // Si hay error de conexión, mostrar mensaje específico
+        if (err.message?.includes('relation "usuarios" does not exist')) {
+          error('❌ ERROR: La tabla usuarios no existe. Ejecuta el script SETUP_USUARIOS_SUPABASE.sql en Supabase Dashboard.');
+        } else if (err.message?.includes('fetch')) {
+          error('❌ ERROR: No se puede conectar con Supabase. Verifica tu configuración de red.');
+        }
       }
     };
     checkFirstAdmin();
@@ -730,21 +741,43 @@ function App() {
   };
 
   const handleFirstAdminCreate = async () => {
-    if (registerPassword !== registerConfirmPassword) {
-      error('Las contraseñas no coinciden');
-      return;
-    }
-    if (registerPassword.length < 6) {
-      error('La contraseña debe tener al menos 6 caracteres');
-      return;
-    }
-    if (!registerEmail.includes('@')) {
-      error('Ingresa un email válido');
+    console.log('🔧 Iniciando creación de primer administrador...');
+
+    // Evitar múltiples clicks
+    if (creatingAdmin) {
+      console.log('⚠️ Ya se está creando un administrador...');
       return;
     }
 
+    setCreatingAdmin(true);
+
     try {
+      // Validaciones
+      if (!registerUsername.trim()) {
+        error('El nombre de usuario es obligatorio');
+        return;
+      }
+      if (registerPassword !== registerConfirmPassword) {
+        error('Las contraseñas no coinciden');
+        return;
+      }
+      if (registerPassword.length < 6) {
+        error('La contraseña debe tener al menos 6 caracteres');
+        return;
+      }
+      if (!registerEmail.includes('@')) {
+        error('Ingresa un email válido');
+        return;
+      }
+
+      console.log('✅ Validaciones pasadas, creando admin con:', {
+        username: registerUsername,
+        email: registerEmail
+      });
+
       const userData = await crearPrimerAdmin(registerUsername, registerEmail, registerPassword);
+      console.log('✅ Admin creado exitosamente:', userData);
+
       setCurrentUser(userData.username);
       setCurrentUserData(userData);
       localStorage.setItem('currentUser', JSON.stringify(userData));
@@ -755,9 +788,28 @@ function App() {
       setRegisterPassword('');
       setRegisterConfirmPassword('');
       success(`Administrador creado exitosamente. Bienvenido ${userData.username}!`);
-      await registrarAccion(userData.username, 'Primer administrador creado', 'cliente');
+
+      try {
+        await registrarAccion(userData.username, 'Primer administrador creado', 'cliente');
+      } catch (auditError) {
+        console.warn('⚠️ Error registrando auditoría:', auditError);
+        // No fallar por esto
+      }
     } catch (error: any) {
-      error(error.message || 'Error creando administrador');
+      console.error('❌ Error creando administrador:', error);
+
+      // Mensajes de error más específicos
+      if (error.message?.includes('relation "usuarios" does not exist')) {
+        error('❌ ERROR: La tabla usuarios no existe en Supabase. Debes ejecutar el script SETUP_USUARIOS_SUPABASE.sql primero.');
+      } else if (error.message?.includes('violates unique constraint')) {
+        error('❌ ERROR: Ya existe un usuario con ese nombre o email.');
+      } else if (error.message?.includes('connection')) {
+        error('❌ ERROR: Problema de conexión con Supabase. Verifica tu configuración.');
+      } else {
+        error(`❌ ERROR: ${error.message || 'Error desconocido creando administrador'}`);
+      }
+    } finally {
+      setCreatingAdmin(false);
     }
   };
 
@@ -891,9 +943,14 @@ function App() {
                   <button
                     type="button"
                     onClick={handleFirstAdminCreate}
-                    className="w-full rounded-3xl bg-accent px-4 py-3 text-sm font-semibold text-white transition hover:bg-indigo-600"
+                    disabled={creatingAdmin}
+                    className={`w-full rounded-3xl px-4 py-3 text-sm font-semibold text-white transition ${
+                      creatingAdmin
+                        ? 'bg-gray-500 cursor-not-allowed'
+                        : 'bg-accent hover:bg-indigo-600'
+                    }`}
                   >
-                    Crear administrador
+                    {creatingAdmin ? '⏳ Creando administrador...' : 'Crear administrador'}
                   </button>
                 </div>
               )}

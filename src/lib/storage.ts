@@ -397,27 +397,44 @@ export async function obtenerAuditoria(): Promise<any[]> {
 // Funciones de usuarios
 export async function crearPrimerAdmin(username: string, email: string, password: string) {
   try {
+    console.log('🔍 Verificando si ya existen usuarios...');
+
     // Verificar que no existan usuarios
     const { data: existingUsers, error: checkError } = await supabase
       .from('usuarios')
       .select('id')
       .limit(1);
 
+    console.log('📊 Resultado verificación usuarios:', { existingUsers, checkError });
+
     if (checkError && checkError.code !== 'PGRST116') {
+      console.error('❌ Error verificando usuarios:', checkError);
       throw checkError;
     }
 
     if (existingUsers && existingUsers.length > 0) {
+      console.log('⚠️ Ya existen usuarios en el sistema');
       throw new Error('Ya existe un administrador en el sistema');
     }
 
+    console.log('✅ No hay usuarios existentes, creando primer admin...');
+
     // Crear hash simple de contraseña (en producción usar bcrypt)
     const passwordHash = btoa(password);
+    const userId = crypto.randomUUID();
+
+    console.log('💾 Insertando usuario en base de datos...', {
+      userId,
+      username,
+      email,
+      rol: 'admin',
+      estado: 'aprobado'
+    });
 
     const { data, error } = await supabase
       .from('usuarios')
       .insert({
-        id: crypto.randomUUID(),
+        id: userId,
         username,
         email,
         password_hash: passwordHash,
@@ -427,10 +444,15 @@ export async function crearPrimerAdmin(username: string, email: string, password
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('❌ Error insertando usuario:', error);
+      throw error;
+    }
+
+    console.log('✅ Usuario creado exitosamente:', data);
     return data;
   } catch (error) {
-    console.error('Error creando primer admin:', error);
+    console.error('❌ Error general creando primer admin:', error);
     throw error;
   }
 }
@@ -563,19 +585,27 @@ export async function rechazarUsuario(userId: string, aprobadoPor: string) {
 
 export async function verificarPrimerAdmin(): Promise<boolean> {
   try {
+    console.log('🔍 Verificando si existe primer admin en Supabase...');
+
     const { data, error } = await supabase
       .from('usuarios')
       .select('id')
       .eq('rol', 'admin')
       .limit(1);
 
+    console.log('📊 Respuesta Supabase verificarPrimerAdmin:', { data, error });
+
     if (error && error.code !== 'PGRST116') {
+      console.error('❌ Error en consulta Supabase:', error);
       throw error;
     }
 
-    return !data || data.length === 0;
+    const needsFirstAdmin = !data || data.length === 0;
+    console.log('✅ ¿Necesita primer admin?:', needsFirstAdmin);
+
+    return needsFirstAdmin;
   } catch (error) {
-    console.error('Error verificando primer admin:', error);
-    return true; // Asumir que no hay admin si hay error
+    console.error('❌ Error verificando primer admin:', error);
+    throw error; // Cambiar para que propague el error
   }
 }
