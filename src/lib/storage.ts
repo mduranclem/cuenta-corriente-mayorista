@@ -501,7 +501,9 @@ export async function registrarUsuario(username: string, email: string, password
 
 export async function autenticarUsuario(username: string, password: string) {
   try {
+    console.log('🔍 Autenticando usuario:', username);
     const passwordHash = btoa(password);
+    console.log('🔐 Password hash generado para comparación');
 
     const { data, error } = await supabase
       .from('usuarios')
@@ -511,16 +513,26 @@ export async function autenticarUsuario(username: string, password: string) {
       .eq('estado', 'aprobado')
       .single();
 
+    console.log('📊 Respuesta Supabase autenticación:', { data, error });
+
     if (error) {
       if (error.code === 'PGRST116') {
+        console.log('❌ No se encontró usuario con esas credenciales');
         throw new Error('Usuario o contraseña incorrectos');
       }
+      console.error('❌ Error de Supabase en autenticación:', error);
       throw error;
     }
 
+    console.log('✅ Usuario autenticado correctamente:', {
+      username: data.username,
+      rol: data.rol,
+      estado: data.estado
+    });
+
     return data;
   } catch (error) {
-    console.error('Error autenticando usuario:', error);
+    console.error('❌ Error general autenticando usuario:', error);
     throw error;
   }
 }

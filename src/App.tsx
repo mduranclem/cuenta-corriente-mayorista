@@ -192,6 +192,7 @@ function App() {
   const [usuariosPendientes, setUsuariosPendientes] = useState<any[]>([]);
   const [needsFirstAdmin, setNeedsFirstAdmin] = useState(false);
   const [creatingAdmin, setCreatingAdmin] = useState(false);
+  const [loggingIn, setLoggingIn] = useState(false);
 
   // Verificar primer admin al cargar
   useEffect(() => {
@@ -725,8 +726,35 @@ function App() {
 
   // Funciones de autenticación
   const handleLogin = async () => {
+    console.log('🔐 Iniciando proceso de login...');
+
+    // Evitar múltiples clicks
+    if (loggingIn) {
+      console.log('⚠️ Ya se está procesando un login...');
+      return;
+    }
+
+    setLoggingIn(true);
+
     try {
+      // Validaciones
+      if (!loginUsername.trim()) {
+        error('El nombre de usuario es obligatorio');
+        return;
+      }
+      if (!loginPassword.trim()) {
+        error('La contraseña es obligatoria');
+        return;
+      }
+
+      console.log('✅ Validaciones de login pasadas, autenticando:', {
+        username: loginUsername,
+        passwordLength: loginPassword.length
+      });
+
       const userData = await autenticarUsuario(loginUsername, loginPassword);
+      console.log('✅ Usuario autenticado exitosamente:', userData);
+
       setCurrentUser(userData.username);
       setCurrentUserData(userData);
       localStorage.setItem('currentUser', JSON.stringify(userData));
@@ -734,9 +762,28 @@ function App() {
       setLoginUsername('');
       setLoginPassword('');
       success(`Bienvenido ${userData.username}!`);
-      await registrarAccion(userData.username, 'Inicio de sesión', 'cliente');
+
+      try {
+        await registrarAccion(userData.username, 'Inicio de sesión', 'cliente');
+      } catch (auditError) {
+        console.warn('⚠️ Error registrando auditoría de login:', auditError);
+        // No fallar por esto
+      }
     } catch (error: any) {
-      error(error.message || 'Error al iniciar sesión');
+      console.error('❌ Error en login:', error);
+
+      // Mensajes de error específicos
+      if (error.message?.includes('Usuario o contraseña incorrectos')) {
+        error('❌ Usuario o contraseña incorrectos. Verifica tus credenciales.');
+      } else if (error.message?.includes('relation "usuarios" does not exist')) {
+        error('❌ ERROR: La tabla usuarios no existe. Ejecuta el script SETUP_USUARIOS_SUPABASE.sql.');
+      } else if (error.message?.includes('connection')) {
+        error('❌ ERROR: Problema de conexión con Supabase.');
+      } else {
+        error(`❌ ERROR: ${error.message || 'Error desconocido en el login'}`);
+      }
+    } finally {
+      setLoggingIn(false);
     }
   };
 
@@ -983,9 +1030,14 @@ function App() {
                   <button
                     type="button"
                     onClick={handleLogin}
-                    className="w-full rounded-3xl bg-accent px-4 py-3 text-sm font-semibold text-white transition hover:bg-indigo-600"
+                    disabled={loggingIn}
+                    className={`w-full rounded-3xl px-4 py-3 text-sm font-semibold text-white transition ${
+                      loggingIn
+                        ? 'bg-gray-500 cursor-not-allowed'
+                        : 'bg-accent hover:bg-indigo-600'
+                    }`}
                   >
-                    Iniciar sesión
+                    {loggingIn ? '⏳ Iniciando sesión...' : 'Iniciar sesión'}
                   </button>
 
                   <div className="text-center">
