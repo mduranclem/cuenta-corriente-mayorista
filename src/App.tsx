@@ -193,6 +193,7 @@ function App() {
   const [needsFirstAdmin, setNeedsFirstAdmin] = useState(false);
   const [creatingAdmin, setCreatingAdmin] = useState(false);
   const [loggingIn, setLoggingIn] = useState(false);
+  const [registering, setRegistering] = useState(false);
 
   // Verificar primer admin al cargar
   useEffect(() => {
@@ -452,57 +453,66 @@ function App() {
   };
 
   const handleNewClient = async () => {
-    if (!newClientNombre.trim()) return;
-
-    if (editingClient) {
-      // Editar cliente existente
-      const clienteActualizado = {
-        ...editingClient,
-        nombre: newClientNombre.trim(),
-        tel: newClientTel.trim(),
-        email: newClientEmail.trim(),
-        cat: newClientCat,
-        notas: newClientNotas.trim(),
-      };
-      const nextClientes = clientes.map(c => c.id === editingClient.id ? clienteActualizado : c);
-      setClientes(nextClientes);
-      await saveClientes(nextClientes);
-      setEditingClient(null);
-      success('Cliente actualizado exitosamente');
-    } else {
-      // Crear nuevo cliente
-      const cliente: Cliente = {
-        id: `c${Date.now()}`,
-        nombre: newClientNombre.trim(),
-        tel: newClientTel.trim(),
-        email: newClientEmail.trim(),
-        cat: newClientCat,
-        notas: newClientNotas.trim(),
-      };
-      const nextClientes = [cliente, ...clientes];
-      setClientes(nextClientes);
-      await saveClientes(nextClientes);
-
-      // Registrar auditoría
-      if (currentUser) {
-        await registrarAccion(
-          currentUser,
-          editingClient ? 'Editar cliente' : 'Agregar cliente',
-          'cliente',
-          cliente.id,
-          `Cliente: ${cliente.nombre} (${cliente.cat})`
-        );
-      }
-
-      success(editingClient ? 'Cliente actualizado exitosamente' : 'Cliente agregado exitosamente');
+    if (!newClientNombre.trim()) {
+      error('❌ ERROR: El nombre del cliente es obligatorio');
+      return;
     }
 
-    setNewClientNombre('');
-    setNewClientTel('');
-    setNewClientEmail('');
-    setNewClientCat('general');
-    setNewClientNotas('');
-    setPage('clientes');
+    try {
+      if (editingClient) {
+        // Editar cliente existente
+        const clienteActualizado = {
+          ...editingClient,
+          nombre: newClientNombre.trim(),
+          tel: newClientTel.trim(),
+          email: newClientEmail.trim(),
+          cat: newClientCat,
+          notas: newClientNotas.trim(),
+        };
+        const nextClientes = clientes.map(c => c.id === editingClient.id ? clienteActualizado : c);
+        setClientes(nextClientes);
+        await saveClientes(nextClientes);
+        setEditingClient(null);
+        success(`✅ CLIENTE ACTUALIZADO: ${clienteActualizado.nombre} se actualizó correctamente`);
+      } else {
+        // Crear nuevo cliente
+        const cliente: Cliente = {
+          id: `c${Date.now()}`,
+          nombre: newClientNombre.trim(),
+          tel: newClientTel.trim(),
+          email: newClientEmail.trim(),
+          cat: newClientCat,
+          notas: newClientNotas.trim(),
+        };
+        const nextClientes = [cliente, ...clientes];
+        setClientes(nextClientes);
+        await saveClientes(nextClientes);
+
+        // Registrar auditoría
+        if (currentUser) {
+          await registrarAccion(
+            currentUser,
+            'Agregar cliente',
+            'cliente',
+            cliente.id,
+            `Cliente: ${cliente.nombre} (${cliente.cat})`
+          );
+        }
+
+        success(`✅ CLIENTE AGREGADO: ${cliente.nombre} se agregó correctamente al sistema`);
+      }
+
+      // Limpiar formulario
+      setNewClientNombre('');
+      setNewClientTel('');
+      setNewClientEmail('');
+      setNewClientCat('general');
+      setNewClientNotas('');
+      setPage('clientes');
+    } catch (err: any) {
+      console.error('❌ Error manejando cliente:', err);
+      error(`❌ ERROR: No se pudo ${editingClient ? 'actualizar' : 'agregar'} el cliente. ${err.message || 'Intenta nuevamente.'}`);
+    }
   };
 
   const handleEditClient = (client: Cliente) => {
@@ -553,7 +563,7 @@ function App() {
       );
     }
 
-    success('Cliente eliminado exitosamente');
+    success(`✅ CLIENTE ELIMINADO: ${client.nombre} se eliminó correctamente del sistema`);
 
     // Si estaba seleccionado, cambiar a otro cliente
     if (selectedClientId === clientId && nextClientes.length > 0) {
@@ -565,35 +575,44 @@ function App() {
   };
 
   const handlePaymentSubmit = async () => {
-    if (!paymentClienteId || paymentAmount <= 0) return;
-    const pago = {
-      id: `pay${Date.now()}`,
-      clienteId: paymentClienteId,
-      fecha: paymentDate,
-      monto: paymentAmount,
-      forma: paymentForm,
-      notas: paymentNotes.trim(),
-    };
-    const nextPagos = [pago, ...pagos];
-    setPagos(nextPagos);
-    await savePagos(nextPagos);
-
-    // Registrar auditoría
-    if (currentUser) {
-      const cliente = clientes.find(c => c.id === paymentClienteId);
-      await registrarAccion(
-        currentUser,
-        'Registrar pago',
-        'pago',
-        pago.id,
-        `${formatMoney(paymentAmount)} (${paymentForm}) - ${cliente?.nombre || 'Cliente desconocido'}`
-      );
+    if (!paymentClienteId || paymentAmount <= 0) {
+      error('❌ ERROR: Selecciona un cliente e ingresa un monto válido');
+      return;
     }
 
-    setPaymentModalOpen(false);
-    setPaymentAmount(0);
-    setPaymentNotes('');
-    success('Pago registrado exitosamente');
+    try {
+      const cliente = clientes.find(c => c.id === paymentClienteId);
+      const pago = {
+        id: `pay${Date.now()}`,
+        clienteId: paymentClienteId,
+        fecha: paymentDate,
+        monto: paymentAmount,
+        forma: paymentForm,
+        notas: paymentNotes.trim(),
+      };
+      const nextPagos = [pago, ...pagos];
+      setPagos(nextPagos);
+      await savePagos(nextPagos);
+
+      // Registrar auditoría
+      if (currentUser) {
+        await registrarAccion(
+          currentUser,
+          'Registrar pago',
+          'pago',
+          pago.id,
+          `${formatMoney(paymentAmount)} (${paymentForm}) - ${cliente?.nombre || 'Cliente desconocido'}`
+        );
+      }
+
+      setPaymentModalOpen(false);
+      setPaymentAmount(0);
+      setPaymentNotes('');
+      success(`✅ PAGO REGISTRADO: ${formatMoney(paymentAmount)} para ${cliente?.nombre || 'Cliente'} (${paymentForm})`);
+    } catch (err: any) {
+      console.error('❌ Error registrando pago:', err);
+      error(`❌ ERROR: No se pudo registrar el pago. ${err.message || 'Intenta nuevamente.'}`);
+    }
   };
 
   const handleProductSave = async () => {
@@ -605,38 +624,67 @@ function App() {
       precio: Number(newProducto.precio),
       precioEsp: Number(newProducto.precioEsp) || undefined,
     };
-    if (!trimmed.nombre || !trimmed.categoria || !trimmed.talle || !trimmed.color || !trimmed.precio) return;
-    if (productEdit) {
-      const nextProductos = productos.map((item) =>
-        item.id === productEdit.id ? { ...item, ...trimmed, precioEsp: trimmed.precioEsp } : item
-      );
-      setProductos(nextProductos);
-      await saveProductos(nextProductos);
-      setProductEdit(null);
-      success('Producto actualizado exitosamente');
-    } else {
-      const nuevo: Producto = {
-        id: `p${Date.now()}`,
-        ...trimmed,
-      };
-      const nextProductos = [nuevo, ...productos];
-      setProductos(nextProductos);
-      await saveProductos(nextProductos);
 
-      // Registrar auditoría
-      if (currentUser) {
-        await registrarAccion(
-          currentUser,
-          productEdit ? 'Editar producto' : 'Agregar producto',
-          'producto',
-          nuevo.id,
-          `${nuevo.nombre} - ${nuevo.categoria} (${formatMoney(nuevo.precio)})`
+    // Validaciones mejoradas
+    if (!trimmed.nombre) {
+      error('❌ ERROR: El nombre del producto es obligatorio');
+      return;
+    }
+    if (!trimmed.categoria) {
+      error('❌ ERROR: La categoría del producto es obligatoria');
+      return;
+    }
+    if (!trimmed.talle) {
+      error('❌ ERROR: El talle del producto es obligatorio');
+      return;
+    }
+    if (!trimmed.color) {
+      error('❌ ERROR: El color del producto es obligatorio');
+      return;
+    }
+    if (!trimmed.precio || trimmed.precio <= 0) {
+      error('❌ ERROR: El precio del producto debe ser mayor a 0');
+      return;
+    }
+
+    try {
+      if (productEdit) {
+        const nextProductos = productos.map((item) =>
+          item.id === productEdit.id ? { ...item, ...trimmed, precioEsp: trimmed.precioEsp } : item
         );
+        setProductos(nextProductos);
+        await saveProductos(nextProductos);
+        setProductEdit(null);
+        success(`✅ PRODUCTO ACTUALIZADO: ${trimmed.nombre} se actualizó correctamente`);
+      } else {
+        const nuevo: Producto = {
+          id: `p${Date.now()}`,
+          ...trimmed,
+        };
+        const nextProductos = [nuevo, ...productos];
+        setProductos(nextProductos);
+        await saveProductos(nextProductos);
+
+        // Registrar auditoría
+        if (currentUser) {
+          await registrarAccion(
+            currentUser,
+            'Agregar producto',
+            'producto',
+            nuevo.id,
+            `${nuevo.nombre} - ${nuevo.categoria} (${formatMoney(nuevo.precio)})`
+          );
+        }
+
+        success(`✅ PRODUCTO AGREGADO: ${trimmed.nombre} se agregó correctamente al inventario`);
       }
 
-      success(productEdit ? 'Producto actualizado exitosamente' : 'Producto agregado exitosamente');
+      // Limpiar formulario
+      setNewProducto({ nombre: '', categoria: '', talle: '', color: '', precio: 0, precioEsp: 0 });
+    } catch (err: any) {
+      console.error('❌ Error manejando producto:', err);
+      error(`❌ ERROR: No se pudo ${productEdit ? 'actualizar' : 'agregar'} el producto. ${err.message || 'Intenta nuevamente.'}`);
     }
-    setNewProducto({ nombre: '', categoria: '', talle: '', color: '', precio: 0, precioEsp: 0 });
   };
 
   const handleProductEdit = (item: Producto) => {
@@ -743,13 +791,17 @@ function App() {
     setLoggingIn(true);
 
     try {
-      // Validaciones
+      // Validaciones detalladas
       if (!loginUsername.trim()) {
-        error('El nombre de usuario es obligatorio');
+        error('❌ ERROR DE LOGIN: El usuario o email es obligatorio. Por favor ingresa tu información.');
         return;
       }
       if (!loginPassword.trim()) {
-        error('La contraseña es obligatoria');
+        error('❌ ERROR DE LOGIN: La contraseña es obligatoria. Por favor ingresa tu contraseña.');
+        return;
+      }
+      if (loginPassword.length < 6) {
+        error('❌ ERROR DE LOGIN: La contraseña debe tener al menos 6 caracteres. Verifica tu contraseña.');
         return;
       }
 
@@ -767,7 +819,7 @@ function App() {
       setPage('dashboard');
       setLoginUsername('');
       setLoginPassword('');
-      success(`Bienvenido ${userData.username}!`);
+      success(`✅ ¡BIENVENIDO ${userData.username.toUpperCase()}! Has iniciado sesión correctamente.`);
 
       try {
         await registrarAccion(userData.username, 'Inicio de sesión', 'cliente');
@@ -778,15 +830,19 @@ function App() {
     } catch (err: any) {
       console.error('❌ Error en login:', err);
 
-      // Mensajes de error específicos
+      // Mensajes de error muy específicos
       if (err.message?.includes('Usuario o contraseña incorrectos')) {
-        error('❌ Usuario o contraseña incorrectos. Verifica tus credenciales.');
+        error(`❌ CREDENCIALES INCORRECTAS: El usuario "${loginUsername}" o la contraseña no coinciden. Verifica:\n• Usuario correcto (mayús/minús)\n• Contraseña correcta\n• Tu cuenta está aprobada`);
       } else if (err.message?.includes('relation "usuarios" does not exist')) {
-        error('❌ ERROR: La tabla usuarios no existe. Ejecuta el script SETUP_USUARIOS_SUPABASE.sql.');
-      } else if (err.message?.includes('connection')) {
-        error('❌ ERROR: Problema de conexión con Supabase.');
+        error('❌ ERROR DE BASE DE DATOS: La tabla de usuarios no existe. Contacta al administrador técnico para configurar la base de datos.');
+      } else if (err.message?.includes('connection') || err.message?.includes('fetch')) {
+        error('❌ ERROR DE CONEXIÓN: No se puede conectar con la base de datos. Verifica tu conexión a internet y vuelve a intentar.');
+      } else if (err.message?.includes('pendiente')) {
+        error('❌ CUENTA PENDIENTE: Tu cuenta está esperando aprobación del administrador. Contacta al admin para que apruebe tu cuenta.');
+      } else if (err.message?.includes('rechazado')) {
+        error('❌ CUENTA RECHAZADA: Tu cuenta fue rechazada por el administrador. Contacta al admin para más información.');
       } else {
-        error(`❌ ERROR: ${err.message || 'Error desconocido en el login'}`);
+        error(`❌ ERROR DE LOGIN: ${err.message || 'Error desconocido durante el inicio de sesión. Contacta al administrador si el problema persiste.'}`);
       }
     } finally {
       setLoggingIn(false);
@@ -869,35 +925,58 @@ function App() {
   const handleRegister = async () => {
     console.log('🔄 Iniciando proceso de registro...');
 
-    // Validaciones
-    if (!registerUsername.trim()) {
-      error('El nombre de usuario es obligatorio');
-      return;
-    }
-    if (!registerEmail.trim()) {
-      error('El email es obligatorio');
-      return;
-    }
-    if (!registerPassword.trim()) {
-      error('La contraseña es obligatoria');
-      return;
-    }
-    if (registerPassword !== registerConfirmPassword) {
-      error('Las contraseñas no coinciden');
-      return;
-    }
-    if (registerPassword.length < 6) {
-      error('La contraseña debe tener al menos 6 caracteres');
-      return;
-    }
-    if (!registerEmail.includes('@')) {
-      error('Ingresa un email válido');
+    // Evitar múltiples clicks
+    if (registering) {
+      console.log('⚠️ Ya se está procesando un registro...');
       return;
     }
 
+    setRegistering(true);
+
     try {
-      console.log('✅ Validaciones pasadas, registrando usuario:', registerUsername);
+      // Validaciones detalladas
+      if (!registerUsername.trim()) {
+        error('❌ ERROR: El nombre de usuario es obligatorio');
+        return;
+      }
+      if (!registerEmail.trim()) {
+        error('❌ ERROR: El email es obligatorio');
+        return;
+      }
+      if (!registerPassword.trim()) {
+        error('❌ ERROR: La contraseña es obligatoria');
+        return;
+      }
+      if (!registerConfirmPassword.trim()) {
+        error('❌ ERROR: Debes confirmar la contraseña');
+        return;
+      }
+      if (registerPassword !== registerConfirmPassword) {
+        error('❌ ERROR: Las contraseñas no coinciden');
+        return;
+      }
+      if (registerPassword.length < 6) {
+        error('❌ ERROR: La contraseña debe tener al menos 6 caracteres');
+        return;
+      }
+      if (!registerEmail.includes('@') || !registerEmail.includes('.')) {
+        error('❌ ERROR: Ingresa un email válido (ejemplo@dominio.com)');
+        return;
+      }
+      if (registerUsername.length < 3) {
+        error('❌ ERROR: El nombre de usuario debe tener al menos 3 caracteres');
+        return;
+      }
+
+      console.log('✅ Todas las validaciones pasadas, registrando usuario:', {
+        username: registerUsername,
+        email: registerEmail,
+        passwordLength: registerPassword.length
+      });
+
       await registrarUsuario(registerUsername, registerEmail, registerPassword);
+
+      console.log('✅ Registro completado exitosamente');
 
       // Limpiar formulario
       setRegisterUsername('');
@@ -905,10 +984,25 @@ function App() {
       setRegisterPassword('');
       setRegisterConfirmPassword('');
       setAuthMode('login');
-      success('Registro exitoso. Tu cuenta está pendiente de aprobación por el administrador.');
+
+      success('✅ ¡REGISTRO EXITOSO! Tu cuenta está pendiente de aprobación por el administrador. Serás notificado cuando sea aprobada.');
     } catch (err: any) {
       console.error('❌ Error en registro:', err);
-      error(err.message || 'Error en el registro');
+
+      // Mensajes de error específicos
+      if (err.message?.includes('El nombre de usuario ya existe')) {
+        error('❌ ERROR: Este nombre de usuario ya está en uso. Prueba con otro.');
+      } else if (err.message?.includes('duplicate key')) {
+        error('❌ ERROR: El email o usuario ya están registrados.');
+      } else if (err.message?.includes('relation "usuarios" does not exist')) {
+        error('❌ ERROR: La tabla usuarios no existe. Contacta al administrador.');
+      } else if (err.message?.includes('connection')) {
+        error('❌ ERROR: Problema de conexión. Verifica tu internet.');
+      } else {
+        error(`❌ ERROR DE REGISTRO: ${err.message || 'Error desconocido en el registro. Intenta nuevamente.'}`);
+      }
+    } finally {
+      setRegistering(false);
     }
   };
 
@@ -1135,9 +1229,14 @@ function App() {
                       console.log('🔘 Botón registrarse clickeado');
                       handleRegister();
                     }}
-                    className="w-full rounded-3xl bg-accent px-4 py-3 text-sm font-semibold text-white transition hover:bg-indigo-600"
+                    disabled={registering}
+                    className={`w-full rounded-3xl px-4 py-3 text-sm font-semibold text-white transition ${
+                      registering
+                        ? 'bg-gray-500 cursor-not-allowed'
+                        : 'bg-accent hover:bg-indigo-600'
+                    }`}
                   >
-                    Registrarse
+                    {registering ? '⏳ Registrando usuario...' : 'Registrarse'}
                   </button>
 
                   <div className="text-center">
