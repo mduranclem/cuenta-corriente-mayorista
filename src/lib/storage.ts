@@ -510,30 +510,31 @@ export async function autenticarUsuario(username: string, password: string) {
       .select('*')
       .eq('username', username)
       .eq('password_hash', passwordHash)
-      .eq('estado', 'aprobado')
-      .single();
+      .eq('estado', 'aprobado');
 
     console.log('📊 Respuesta Supabase autenticación:', { data, error });
 
     if (error) {
-      if (error.code === 'PGRST116') {
-        console.log('❌ No se encontró usuario con esas credenciales');
-        throw new Error('Usuario o contraseña incorrectos');
-      }
       console.error('❌ Error de Supabase en autenticación:', error);
       throw error;
     }
 
+    if (!data || data.length === 0) {
+      console.log('❌ No se encontró usuario con esas credenciales');
+      throw new Error('Usuario o contraseña incorrectos');
+    }
+
+    const usuario = data[0];
     console.log('✅ Usuario autenticado correctamente:', {
-      username: data.username,
-      rol: data.rol,
-      estado: data.estado
+      username: usuario.username,
+      rol: usuario.rol,
+      estado: usuario.estado
     });
 
-    return data;
-  } catch (error) {
-    console.error('❌ Error general autenticando usuario:', error);
-    throw error;
+    return usuario;
+  } catch (err: any) {
+    console.error('❌ Error general autenticando usuario:', err);
+    throw err;
   }
 }
 
