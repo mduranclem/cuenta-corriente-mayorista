@@ -359,17 +359,11 @@ function App() {
       )
     );
 
-    // Forzar la actualización del DOM para ocultar el dropdown
+    // Forzar re-render inmediato para ocultar dropdown
     setTimeout(() => {
-      // Buscar el input específico del row y hacerle blur para ocultar el dropdown
-      const inputs = document.querySelectorAll('input[placeholder="Buscar producto..."]');
-      inputs.forEach((input) => {
-        const htmlInput = input as HTMLInputElement;
-        if (htmlInput.value === '') {
-          htmlInput.blur();
-        }
-      });
-    }, 50);
+      // Forzar un re-render para asegurar que el dropdown se oculte
+      setRows((prevRows) => [...prevRows]);
+    }, 10);
   };
 
   const updateClientPrices = (clienteId: string) => {
@@ -873,6 +867,21 @@ function App() {
   };
 
   const handleRegister = async () => {
+    console.log('🔄 Iniciando proceso de registro...');
+
+    // Validaciones
+    if (!registerUsername.trim()) {
+      error('El nombre de usuario es obligatorio');
+      return;
+    }
+    if (!registerEmail.trim()) {
+      error('El email es obligatorio');
+      return;
+    }
+    if (!registerPassword.trim()) {
+      error('La contraseña es obligatoria');
+      return;
+    }
     if (registerPassword !== registerConfirmPassword) {
       error('Las contraseñas no coinciden');
       return;
@@ -887,7 +896,10 @@ function App() {
     }
 
     try {
+      console.log('✅ Validaciones pasadas, registrando usuario:', registerUsername);
       await registrarUsuario(registerUsername, registerEmail, registerPassword);
+
+      // Limpiar formulario
       setRegisterUsername('');
       setRegisterEmail('');
       setRegisterPassword('');
@@ -895,6 +907,7 @@ function App() {
       setAuthMode('login');
       success('Registro exitoso. Tu cuenta está pendiente de aprobación por el administrador.');
     } catch (err: any) {
+      console.error('❌ Error en registro:', err);
       error(err.message || 'Error en el registro');
     }
   };
@@ -1223,7 +1236,7 @@ function App() {
                     </label>
                   </div>
                 </div>
-                <div className="mt-6 overflow-hidden rounded-3xl border border-border">
+                <div className="mt-6 overflow-visible rounded-3xl border border-border">
                   <div className="grid grid-cols-[2fr_80px_120px_120px_80px] gap-4 bg-surface px-5 py-4 text-sm uppercase tracking-[0.12em] text-textSecondary">
                     <span>Producto</span>
                     <span>Cant.</span>
@@ -1231,7 +1244,7 @@ function App() {
                     <span>Subtotal</span>
                     <span></span>
                   </div>
-                  <div className="divide-y divide-slate-200 bg-panel">
+                  <div className="divide-y divide-slate-200 bg-panel overflow-visible">
                     {rows.map((row) => {
                       const matches = filteredProducts(row.query || '');
                       return (
@@ -1255,7 +1268,7 @@ function App() {
                               className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm outline-none transition focus:border-accent"
                             />
                             {matches.length > 0 && row.query && row.query.trim().length > 0 && !row.prodId && (
-                              <div className="absolute left-0 top-full z-50 mt-2 max-h-60 w-full overflow-auto rounded-3xl border border-border bg-panel shadow-2xl">
+                              <div className="absolute left-0 top-full z-[60] mt-2 max-h-60 w-full overflow-auto rounded-3xl border border-border bg-panel shadow-2xl">
                                 {matches.slice(0, 6).map((product, index) => (
                                   <button
                                     key={product.id}
