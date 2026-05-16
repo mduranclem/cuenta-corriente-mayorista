@@ -15,7 +15,7 @@ const items: SidebarItem[] = [
   { id: 'historial', label: 'Historial', icon: <span className="text-lg">📜</span> },
   { id: 'nuevo-cliente', label: 'Nuevo cliente', icon: <span className="text-lg">➕</span> },
   { id: 'productos', label: 'Productos', icon: <span className="text-lg">🧵</span> },
-  { id: 'admin', label: 'Administración', icon: <span className="text-lg">👑</span> },
+  { id: 'admin', label: 'Auditoría', icon: <span className="text-lg">📋</span> },
   { id: 'backup', label: 'Respaldo', icon: <span className="text-lg">💾</span> },
 ];
 
@@ -26,9 +26,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({ active, onSelect, currentUserData }: SidebarProps) {
-  const filteredItems = items.filter(item =>
-    item.id !== 'admin' || currentUserData?.rol === 'admin'
-  );
+  const filteredItems = items; // Mostrar auditoría para todos los usuarios
   return (
     <>
       {/* Sidebar de escritorio */}
