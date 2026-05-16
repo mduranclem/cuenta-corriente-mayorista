@@ -433,14 +433,38 @@ function App() {
     setFacturas(nextFacturas);
     await saveFacturas(nextFacturas);
 
-    // Registrar auditoría
+    // Registrar auditoría detallada
     if (currentUser) {
+      const fechaHora = new Date().toLocaleString('es-AR', {
+        timeZone: 'America/Argentina/Buenos_Aires',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
+
+      const productosDetalle = items.map(item =>
+        `  - ${item.nombre} (${item.categoria}, ${item.talle}, ${item.color}) x${item.cant} = ${formatMoney(item.precio * item.cant)}`
+      ).join('\n');
+
       await registrarAccion(
         currentUser,
-        'Crear factura',
+        `🧾 FACTURA CREADA por ${currentUser}`,
         'factura',
         factura.id,
-        `Factura por ${formatMoney(factura.total)} para ${invoiceClienteActual?.nombre}`
+        `📋 DETALLES DE LA FACTURA:
+• Cliente: ${invoiceClienteActual?.nombre}
+• Fecha factura: ${invoiceDate}
+• Total: ${formatMoney(factura.total)}
+• Cantidad de productos: ${items.length}
+
+📦 PRODUCTOS FACTURADOS:
+${productosDetalle}
+
+• Creado por: ${currentUser}
+• Fecha/Hora: ${fechaHora}`
       );
     }
 
@@ -472,6 +496,34 @@ function App() {
         const nextClientes = clientes.map(c => c.id === editingClient.id ? clienteActualizado : c);
         setClientes(nextClientes);
         await saveClientes(nextClientes);
+
+        // Registrar auditoría detallada para edición
+        if (currentUser) {
+          const fechaHora = new Date().toLocaleString('es-AR', {
+            timeZone: 'America/Argentina/Buenos_Aires',
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+          });
+          await registrarAccion(
+            currentUser,
+            `✏️ CLIENTE EDITADO por ${currentUser}`,
+            'cliente',
+            clienteActualizado.id,
+            `📋 CLIENTE MODIFICADO:
+• Nombre: ${clienteActualizado.nombre}
+• Teléfono: ${clienteActualizado.tel || 'No especificado'}
+• Email: ${clienteActualizado.email || 'No especificado'}
+• Categoría: ${clienteActualizado.cat === 'especial' ? 'ESPECIAL (precios diferenciados)' : 'GENERAL'}
+• Notas: ${clienteActualizado.notas || 'Sin notas'}
+• Modificado por: ${currentUser}
+• Fecha/Hora: ${fechaHora}`
+          );
+        }
+
         setEditingClient(null);
         success(`✅ CLIENTE ACTUALIZADO: ${clienteActualizado.nombre} se actualizó correctamente`);
       } else {
@@ -488,14 +540,30 @@ function App() {
         setClientes(nextClientes);
         await saveClientes(nextClientes);
 
-        // Registrar auditoría
+        // Registrar auditoría detallada
         if (currentUser) {
+          const fechaHora = new Date().toLocaleString('es-AR', {
+            timeZone: 'America/Argentina/Buenos_Aires',
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+          });
           await registrarAccion(
             currentUser,
-            'Agregar cliente',
+            `👥 CLIENTE AGREGADO por ${currentUser}`,
             'cliente',
             cliente.id,
-            `Cliente: ${cliente.nombre} (${cliente.cat})`
+            `📋 DETALLES DEL CLIENTE:
+• Nombre: ${cliente.nombre}
+• Teléfono: ${cliente.tel || 'No especificado'}
+• Email: ${cliente.email || 'No especificado'}
+• Categoría: ${cliente.cat === 'especial' ? 'ESPECIAL (precios diferenciados)' : 'GENERAL'}
+• Notas: ${cliente.notas || 'Sin notas'}
+• Agregado por: ${currentUser}
+• Fecha/Hora: ${fechaHora}`
           );
         }
 
@@ -552,14 +620,37 @@ function App() {
     setClientes(nextClientes);
     await saveClientes(nextClientes);
 
-    // Registrar auditoría
+    // Registrar auditoría detallada
     if (currentUser) {
+      const fechaHora = new Date().toLocaleString('es-AR', {
+        timeZone: 'America/Argentina/Buenos_Aires',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
+
+      const facturasEliminadas = facturas.filter(f => f.clienteId === clientId).length;
+      const pagosEliminados = pagos.filter(p => p.clienteId === clientId).length;
+
       await registrarAccion(
         currentUser,
-        'Eliminar cliente',
+        `🗑️ CLIENTE ELIMINADO por ${currentUser}`,
         'cliente',
         clientId,
-        `Cliente: ${client?.nombre || 'Desconocido'}`
+        `📋 CLIENTE ELIMINADO:
+• Nombre: ${client.nombre}
+• Teléfono: ${client.tel || 'No especificado'}
+• Email: ${client.email || 'No especificado'}
+• Categoría: ${client.cat === 'especial' ? 'ESPECIAL' : 'GENERAL'}
+• Facturas eliminadas: ${facturasEliminadas}
+• Pagos eliminados: ${pagosEliminados}
+• Eliminado por: ${currentUser}
+• Fecha/Hora: ${fechaHora}
+
+⚠️ ATENCIÓN: Toda la información asociada a este cliente fue eliminada permanentemente.`
       );
     }
 
@@ -594,14 +685,30 @@ function App() {
       setPagos(nextPagos);
       await savePagos(nextPagos);
 
-      // Registrar auditoría
+      // Registrar auditoría detallada
       if (currentUser) {
+        const fechaHora = new Date().toLocaleString('es-AR', {
+          timeZone: 'America/Argentina/Buenos_Aires',
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
+        });
         await registrarAccion(
           currentUser,
-          'Registrar pago',
+          `💰 PAGO REGISTRADO por ${currentUser}`,
           'pago',
           pago.id,
-          `${formatMoney(paymentAmount)} (${paymentForm}) - ${cliente?.nombre || 'Cliente desconocido'}`
+          `📋 DETALLES DEL PAGO:
+• Cliente: ${cliente?.nombre || 'Cliente desconocido'}
+• Monto: ${formatMoney(paymentAmount)}
+• Forma de pago: ${paymentForm}
+• Fecha del pago: ${paymentDate}
+• Notas: ${paymentNotes || 'Sin notas'}
+• Registrado por: ${currentUser}
+• Fecha/Hora: ${fechaHora}`
         );
       }
 
@@ -654,6 +761,35 @@ function App() {
         );
         setProductos(nextProductos);
         await saveProductos(nextProductos);
+
+        // Registrar auditoría detallada para edición de producto
+        if (currentUser) {
+          const fechaHora = new Date().toLocaleString('es-AR', {
+            timeZone: 'America/Argentina/Buenos_Aires',
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+          });
+          await registrarAccion(
+            currentUser,
+            `✏️ PRODUCTO EDITADO por ${currentUser}`,
+            'producto',
+            productEdit.id,
+            `📋 PRODUCTO MODIFICADO:
+• Nombre: ${trimmed.nombre}
+• Categoría: ${trimmed.categoria}
+• Talle: ${trimmed.talle}
+• Color: ${trimmed.color}
+• Precio general: ${formatMoney(trimmed.precio)}
+• Precio especial: ${trimmed.precioEsp ? formatMoney(trimmed.precioEsp) : 'No definido'}
+• Modificado por: ${currentUser}
+• Fecha/Hora: ${fechaHora}`
+          );
+        }
+
         setProductEdit(null);
         success(`✅ PRODUCTO ACTUALIZADO: ${trimmed.nombre} se actualizó correctamente`);
       } else {
@@ -665,14 +801,31 @@ function App() {
         setProductos(nextProductos);
         await saveProductos(nextProductos);
 
-        // Registrar auditoría
+        // Registrar auditoría detallada
         if (currentUser) {
+          const fechaHora = new Date().toLocaleString('es-AR', {
+            timeZone: 'America/Argentina/Buenos_Aires',
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+          });
           await registrarAccion(
             currentUser,
-            'Agregar producto',
+            `🧵 PRODUCTO AGREGADO por ${currentUser}`,
             'producto',
             nuevo.id,
-            `${nuevo.nombre} - ${nuevo.categoria} (${formatMoney(nuevo.precio)})`
+            `📋 DETALLES DEL PRODUCTO:
+• Nombre: ${nuevo.nombre}
+• Categoría: ${nuevo.categoria}
+• Talle: ${nuevo.talle}
+• Color: ${nuevo.color}
+• Precio general: ${formatMoney(nuevo.precio)}
+• Precio especial: ${nuevo.precioEsp ? formatMoney(nuevo.precioEsp) : 'No definido'}
+• Agregado por: ${currentUser}
+• Fecha/Hora: ${fechaHora}`
           );
         }
 
@@ -710,14 +863,33 @@ function App() {
     setProductos(next);
     await saveProductos(next);
 
-    // Registrar auditoría
+    // Registrar auditoría detallada
     if (currentUser) {
+      const fechaHora = new Date().toLocaleString('es-AR', {
+        timeZone: 'America/Argentina/Buenos_Aires',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
       await registrarAccion(
         currentUser,
-        'Eliminar producto',
+        `🗑️ PRODUCTO ELIMINADO por ${currentUser}`,
         'producto',
         id,
-        `${producto?.nombre || 'Desconocido'} - ${producto?.categoria || ''}`
+        `📋 PRODUCTO ELIMINADO:
+• Nombre: ${producto.nombre}
+• Categoría: ${producto.categoria}
+• Talle: ${producto.talle}
+• Color: ${producto.color}
+• Precio general: ${formatMoney(producto.precio)}
+• Precio especial: ${producto.precioEsp ? formatMoney(producto.precioEsp) : 'No definido'}
+• Eliminado por: ${currentUser}
+• Fecha/Hora: ${fechaHora}
+
+⚠️ ATENCIÓN: El producto fue eliminado permanentemente del inventario.`
       );
     }
 
@@ -822,7 +994,28 @@ function App() {
       success(`✅ ¡BIENVENIDO ${userData.username.toUpperCase()}! Has iniciado sesión correctamente.`);
 
       try {
-        await registrarAccion(userData.username, 'Inicio de sesión', 'cliente');
+        const fechaHora = new Date().toLocaleString('es-AR', {
+          timeZone: 'America/Argentina/Buenos_Aires',
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
+        });
+        await registrarAccion(
+          userData.username,
+          `🔐 INICIO DE SESIÓN`,
+          'cliente',
+          undefined,
+          `📋 ACCESO AL SISTEMA:
+• Usuario: ${userData.username}
+• Rol: ${userData.rol.toUpperCase()}
+• Email: ${userData.email}
+• Fecha/Hora: ${fechaHora}
+
+✅ Usuario conectado exitosamente al sistema de cuenta corriente.`
+        );
       } catch (auditError) {
         console.warn('⚠️ Error registrando auditoría de login:', auditError);
         // No fallar por esto
@@ -899,7 +1092,29 @@ function App() {
       success(`Administrador creado exitosamente. Bienvenido ${userData.username}!`);
 
       try {
-        await registrarAccion(userData.username, 'Primer administrador creado', 'cliente');
+        const fechaHora = new Date().toLocaleString('es-AR', {
+          timeZone: 'America/Argentina/Buenos_Aires',
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
+        });
+        await registrarAccion(
+          userData.username,
+          `👑 PRIMER ADMINISTRADOR CREADO`,
+          'cliente',
+          undefined,
+          `📋 CONFIGURACIÓN INICIAL COMPLETADA:
+• Username: ${userData.username}
+• Email: ${userData.email}
+• Rol: ADMINISTRADOR
+• Fecha/Hora: ${fechaHora}
+
+🎉 ¡Sistema de cuenta corriente inicializado exitosamente!
+✅ El administrador puede ahora gestionar usuarios y todas las funciones del sistema.`
+        );
       } catch (auditError) {
         console.warn('⚠️ Error registrando auditoría:', auditError);
         // No fallar por esto
@@ -978,6 +1193,35 @@ function App() {
 
       console.log('✅ Registro completado exitosamente');
 
+      // Registrar auditoría para nuevo registro
+      try {
+        const fechaHora = new Date().toLocaleString('es-AR', {
+          timeZone: 'America/Argentina/Buenos_Aires',
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
+        });
+        await registrarAccion(
+          registerUsername,
+          `📝 NUEVO USUARIO REGISTRADO`,
+          'cliente',
+          undefined,
+          `📋 SOLICITUD DE REGISTRO:
+• Username: ${registerUsername}
+• Email: ${registerEmail}
+• Estado: PENDIENTE de aprobación
+• Fecha/Hora: ${fechaHora}
+
+⏳ Usuario esperando aprobación de administrador para acceder al sistema.`
+        );
+      } catch (auditError) {
+        console.warn('⚠️ Error registrando auditoría de registro:', auditError);
+        // No fallar por esto
+      }
+
       // Limpiar formulario
       setRegisterUsername('');
       setRegisterEmail('');
@@ -1008,27 +1252,121 @@ function App() {
 
   const handleAprobarUsuario = async (userId: string) => {
     try {
+      const usuarioPendiente = usuariosPendientes.find(u => u.id === userId);
       await aprobarUsuario(userId, currentUserData.username);
       await loadUsuariosPendientes();
-      success('Usuario aprobado exitosamente');
-      await registrarAccion(currentUserData.username, 'Usuario aprobado', 'cliente', userId);
+
+      // Registrar auditoría detallada
+      if (currentUserData && usuarioPendiente) {
+        const fechaHora = new Date().toLocaleString('es-AR', {
+          timeZone: 'America/Argentina/Buenos_Aires',
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
+        });
+        await registrarAccion(
+          currentUserData.username,
+          `✅ USUARIO APROBADO por ${currentUserData.username}`,
+          'cliente',
+          userId,
+          `📋 USUARIO APROBADO:
+• Username: ${usuarioPendiente.username}
+• Email: ${usuarioPendiente.email}
+• Fecha registro: ${new Date(usuarioPendiente.created_at).toLocaleDateString('es-AR')}
+• Aprobado por: ${currentUserData.username} (${currentUserData.rol})
+• Fecha/Hora: ${fechaHora}
+
+✅ El usuario ahora puede acceder al sistema con credenciales completas.`
+        );
+      }
+
+      success(`✅ USUARIO APROBADO: ${usuarioPendiente?.username || 'Usuario'} puede acceder al sistema`);
     } catch (err: any) {
-      error(err.message || 'Error aprobando usuario');
+      error(`❌ ERROR: ${err.message || 'No se pudo aprobar el usuario. Intenta nuevamente.'}`);
     }
   };
 
   const handleRechazarUsuario = async (userId: string) => {
     try {
+      const usuarioPendiente = usuariosPendientes.find(u => u.id === userId);
+      if (!window.confirm(`¿Estás seguro de rechazar el registro de "${usuarioPendiente?.username || 'este usuario'}"?\n\nEsta acción no se puede deshacer.`)) {
+        return;
+      }
+
       await rechazarUsuario(userId, currentUserData.username);
       await loadUsuariosPendientes();
-      success('Usuario rechazado');
-      await registrarAccion(currentUserData.username, 'Usuario rechazado', 'cliente', userId);
+
+      // Registrar auditoría detallada
+      if (currentUserData && usuarioPendiente) {
+        const fechaHora = new Date().toLocaleString('es-AR', {
+          timeZone: 'America/Argentina/Buenos_Aires',
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
+        });
+        await registrarAccion(
+          currentUserData.username,
+          `❌ USUARIO RECHAZADO por ${currentUserData.username}`,
+          'cliente',
+          userId,
+          `📋 USUARIO RECHAZADO:
+• Username: ${usuarioPendiente.username}
+• Email: ${usuarioPendiente.email}
+• Fecha registro: ${new Date(usuarioPendiente.created_at).toLocaleDateString('es-AR')}
+• Rechazado por: ${currentUserData.username} (${currentUserData.rol})
+• Fecha/Hora: ${fechaHora}
+
+❌ El usuario no puede acceder al sistema. Registro denegado permanentemente.`
+        );
+      }
+
+      success(`❌ USUARIO RECHAZADO: ${usuarioPendiente?.username || 'Usuario'} fue denegado el acceso`);
     } catch (err: any) {
-      error(err.message || 'Error rechazando usuario');
+      error(`❌ ERROR: ${err.message || 'No se pudo rechazar el usuario. Intenta nuevamente.'}`);
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    const usuarioSaliente = currentUser;
+    const datosUsuario = currentUserData;
+
+    // Registrar auditoría de cierre de sesión antes de limpiar datos
+    if (usuarioSaliente && datosUsuario) {
+      try {
+        const fechaHora = new Date().toLocaleString('es-AR', {
+          timeZone: 'America/Argentina/Buenos_Aires',
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
+        });
+        await registrarAccion(
+          usuarioSaliente,
+          `🚪 CIERRE DE SESIÓN`,
+          'cliente',
+          undefined,
+          `📋 SALIDA DEL SISTEMA:
+• Usuario: ${usuarioSaliente}
+• Rol: ${datosUsuario.rol.toUpperCase()}
+• Email: ${datosUsuario.email}
+• Fecha/Hora: ${fechaHora}
+
+👋 Usuario desconectado del sistema de cuenta corriente.`
+        );
+      } catch (auditError) {
+        console.warn('⚠️ Error registrando auditoría de logout:', auditError);
+        // No fallar por esto
+      }
+    }
+
     setCurrentUser(null);
     setCurrentUserData(null);
     localStorage.removeItem('currentUser');
