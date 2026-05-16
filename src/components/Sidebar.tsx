@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-type SidebarPage = 'dashboard' | 'clientes' | 'cuenta' | 'historial' | 'nuevo-cliente' | 'productos' | 'backup';
+type SidebarPage = 'dashboard' | 'clientes' | 'cuenta' | 'historial' | 'nuevo-cliente' | 'productos' | 'backup' | 'admin';
 
 interface SidebarItem {
   id: SidebarPage;
@@ -15,15 +15,20 @@ const items: SidebarItem[] = [
   { id: 'historial', label: 'Historial', icon: <span className="text-lg">📜</span> },
   { id: 'nuevo-cliente', label: 'Nuevo cliente', icon: <span className="text-lg">➕</span> },
   { id: 'productos', label: 'Productos', icon: <span className="text-lg">🧵</span> },
+  { id: 'admin', label: 'Administración', icon: <span className="text-lg">👑</span> },
   { id: 'backup', label: 'Respaldo', icon: <span className="text-lg">💾</span> },
 ];
 
 interface SidebarProps {
   active: SidebarPage;
   onSelect: (id: SidebarPage) => void;
+  currentUserData?: any;
 }
 
-export function Sidebar({ active, onSelect }: SidebarProps) {
+export function Sidebar({ active, onSelect, currentUserData }: SidebarProps) {
+  const filteredItems = items.filter(item =>
+    item.id !== 'admin' || currentUserData?.rol === 'admin'
+  );
   return (
     <>
       {/* Sidebar de escritorio */}
@@ -33,7 +38,7 @@ export function Sidebar({ active, onSelect }: SidebarProps) {
           <h1 className="mt-3 text-3xl font-semibold text-textPrimary">Cuenta corriente</h1>
         </div>
         <nav className="space-y-2">
-          {items.map((item) => (
+          {filteredItems.map((item) => (
             <button
               key={item.id}
               type="button"
@@ -59,7 +64,7 @@ export function Sidebar({ active, onSelect }: SidebarProps) {
             <h1 className="mt-3 text-2xl font-semibold text-textPrimary">Cuenta corriente</h1>
           </div>
           <nav className="space-y-2">
-            {items.map((item) => (
+            {filteredItems.map((item) => (
               <button
                 key={item.id}
                 type="button"

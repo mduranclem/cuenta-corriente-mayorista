@@ -71,3 +71,16 @@ export interface DatabaseAuditoria {
   fecha: string
   created_at?: string
 }
+
+export interface DatabaseUsuario {
+  id: string
+  username: string
+  email: string
+  password_hash: string
+  rol: 'admin' | 'usuario'
+  estado: 'pendiente' | 'aprobado' | 'rechazado'
+  creado_por?: string
+  aprobado_por?: string
+  created_at?: string
+  updated_at?: string
+}

@@ -18,9 +18,16 @@ import {
   saveProductos,
   registrarAccion,
   obtenerAuditoria,
+  verificarPrimerAdmin,
+  crearPrimerAdmin,
+  registrarUsuario,
+  autenticarUsuario,
+  obtenerUsuariosPendientes,
+  aprobarUsuario,
+  rechazarUsuario,
 } from './lib/storage';
 
-type Page = 'dashboard' | 'clientes' | 'cuenta' | 'historial' | 'nuevo-cliente' | 'productos' | 'backup' | 'login';
+type Page = 'dashboard' | 'clientes' | 'cuenta' | 'historial' | 'nuevo-cliente' | 'productos' | 'backup' | 'login' | 'admin';
 
 interface RowFactura extends FacturaItem {
   query: string;
@@ -174,18 +181,67 @@ function App() {
   const [backupError, setBackupError] = useState('');
   const [selectedInvoice, setSelectedInvoice] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<string | null>(null);
+  const [currentUserData, setCurrentUserData] = useState<any>(null);
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  const [registerUsername, setRegisterUsername] = useState('');
+  const [registerEmail, setRegisterEmail] = useState('');
+  const [registerPassword, setRegisterPassword] = useState('');
+  const [registerConfirmPassword, setRegisterConfirmPassword] = useState('');
+  const [authMode, setAuthMode] = useState<'login' | 'register' | 'first-admin'>('login');
+  const [usuariosPendientes, setUsuariosPendientes] = useState<any[]>([]);
+  const [needsFirstAdmin, setNeedsFirstAdmin] = useState(false);
 
+  // Verificar primer admin al cargar
   useEffect(() => {
-    // Verificar si hay un usuario logueado
+    const checkFirstAdmin = async () => {
+      try {
+        const needsAdmin = await verificarPrimerAdmin();
+        setNeedsFirstAdmin(needsAdmin);
+        if (needsAdmin) {
+          setAuthMode('first-admin');
+          setPage('login');
+        }
+      } catch (error) {
+        console.error('Error verificando primer admin:', error);
+      }
+    };
+    checkFirstAdmin();
+  }, []);
+
+  // Verificar usuario logueado al cargar
+  useEffect(() => {
     const savedUser = localStorage.getItem('currentUser');
-    if (savedUser) {
-      setCurrentUser(savedUser);
-    } else {
+    if (savedUser && !needsFirstAdmin) {
+      try {
+        const userData = JSON.parse(savedUser);
+        setCurrentUser(userData.username);
+        setCurrentUserData(userData);
+        setPage('dashboard');
+      } catch (error) {
+        localStorage.removeItem('currentUser');
+        setPage('login');
+      }
+    } else if (!needsFirstAdmin) {
       setPage('login');
     }
-  }, []);
+  }, [needsFirstAdmin]);
+
+  // Cargar usuarios pendientes si es admin
+  useEffect(() => {
+    if (currentUserData?.rol === 'admin') {
+      loadUsuariosPendientes();
+    }
+  }, [currentUserData]);
+
+  const loadUsuariosPendientes = async () => {
+    try {
+      const usuarios = await obtenerUsuariosPendientes();
+      setUsuariosPendientes(usuarios);
+    } catch (error) {
+      console.error('Error cargando usuarios pendientes:', error);
+    }
+  };
 
   useEffect(() => {
     // Solo cargar datos si hay un usuario logueado
@@ -657,31 +713,109 @@ function App() {
   };
 
   // Funciones de autenticación
-  const handleLogin = () => {
-    // Usuarios predefinidos (en producción esto sería contra una base de datos)
-    const users = {
-      'admin': 'admin123',
-      'laura': 'laura123',
-      'carlos': 'carlos123',
-      'maria': 'maria123'
-    };
-
-    if (users[loginUsername as keyof typeof users] === loginPassword) {
-      setCurrentUser(loginUsername);
-      localStorage.setItem('currentUser', loginUsername);
+  const handleLogin = async () => {
+    try {
+      const userData = await autenticarUsuario(loginUsername, loginPassword);
+      setCurrentUser(userData.username);
+      setCurrentUserData(userData);
+      localStorage.setItem('currentUser', JSON.stringify(userData));
       setPage('dashboard');
       setLoginUsername('');
       setLoginPassword('');
-      success(`Bienvenido ${loginUsername}!`);
-    } else {
-      error('Usuario o contraseña incorrectos');
+      success(`Bienvenido ${userData.username}!`);
+      await registrarAccion(userData.username, 'Inicio de sesión', 'cliente');
+    } catch (error: any) {
+      error(error.message || 'Error al iniciar sesión');
+    }
+  };
+
+  const handleFirstAdminCreate = async () => {
+    if (registerPassword !== registerConfirmPassword) {
+      error('Las contraseñas no coinciden');
+      return;
+    }
+    if (registerPassword.length < 6) {
+      error('La contraseña debe tener al menos 6 caracteres');
+      return;
+    }
+    if (!registerEmail.includes('@')) {
+      error('Ingresa un email válido');
+      return;
+    }
+
+    try {
+      const userData = await crearPrimerAdmin(registerUsername, registerEmail, registerPassword);
+      setCurrentUser(userData.username);
+      setCurrentUserData(userData);
+      localStorage.setItem('currentUser', JSON.stringify(userData));
+      setNeedsFirstAdmin(false);
+      setPage('dashboard');
+      setRegisterUsername('');
+      setRegisterEmail('');
+      setRegisterPassword('');
+      setRegisterConfirmPassword('');
+      success(`Administrador creado exitosamente. Bienvenido ${userData.username}!`);
+      await registrarAccion(userData.username, 'Primer administrador creado', 'cliente');
+    } catch (error: any) {
+      error(error.message || 'Error creando administrador');
+    }
+  };
+
+  const handleRegister = async () => {
+    if (registerPassword !== registerConfirmPassword) {
+      error('Las contraseñas no coinciden');
+      return;
+    }
+    if (registerPassword.length < 6) {
+      error('La contraseña debe tener al menos 6 caracteres');
+      return;
+    }
+    if (!registerEmail.includes('@')) {
+      error('Ingresa un email válido');
+      return;
+    }
+
+    try {
+      await registrarUsuario(registerUsername, registerEmail, registerPassword);
+      setRegisterUsername('');
+      setRegisterEmail('');
+      setRegisterPassword('');
+      setRegisterConfirmPassword('');
+      setAuthMode('login');
+      success('Registro exitoso. Tu cuenta está pendiente de aprobación por el administrador.');
+    } catch (error: any) {
+      error(error.message || 'Error en el registro');
+    }
+  };
+
+  const handleAprobarUsuario = async (userId: string) => {
+    try {
+      await aprobarUsuario(userId, currentUserData.username);
+      await loadUsuariosPendientes();
+      success('Usuario aprobado exitosamente');
+      await registrarAccion(currentUserData.username, 'Usuario aprobado', 'cliente', userId);
+    } catch (error: any) {
+      error(error.message || 'Error aprobando usuario');
+    }
+  };
+
+  const handleRechazarUsuario = async (userId: string) => {
+    try {
+      await rechazarUsuario(userId, currentUserData.username);
+      await loadUsuariosPendientes();
+      success('Usuario rechazado');
+      await registrarAccion(currentUserData.username, 'Usuario rechazado', 'cliente', userId);
+    } catch (error: any) {
+      error(error.message || 'Error rechazando usuario');
     }
   };
 
   const handleLogout = () => {
     setCurrentUser(null);
+    setCurrentUserData(null);
     localStorage.removeItem('currentUser');
     setPage('login');
+    setAuthMode('login');
     success('Sesión cerrada correctamente');
   };
 
@@ -694,54 +828,192 @@ function App() {
   return (
     <>
       {page === 'login' && (
-        <div className="min-h-screen bg-surface text-textPrimary">
-            <div className="w-full max-w-md">
+        <div className="min-h-screen bg-surface text-textPrimary flex items-center justify-center p-4">
+          <div className="w-full max-w-md">
             <div className="rounded-3xl bg-panel p-8 shadow-panel">
               <div className="text-center mb-8">
                 <h1 className="text-3xl font-bold text-textPrimary">Cuenta Corriente</h1>
                 <p className="mt-2 text-textSecondary">Sistema Mayorista</p>
               </div>
 
-              <div className="space-y-4">
-                <label className="space-y-2 text-sm text-textSecondary">
-                  Usuario
-                  <input
-                    type="text"
-                    value={loginUsername}
-                    onChange={(e) => setLoginUsername(e.target.value)}
-                    className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
-                    placeholder="Ingresa tu usuario"
-                  />
-                </label>
+              {authMode === 'first-admin' && (
+                <div className="space-y-4">
+                  <div className="rounded-3xl bg-blue-900/20 border border-blue-600/30 p-4">
+                    <h3 className="font-semibold text-blue-300 mb-2">🔧 Configuración inicial</h3>
+                    <p className="text-sm text-blue-200">Crea el primer administrador del sistema</p>
+                  </div>
 
-                <label className="space-y-2 text-sm text-textSecondary">
-                  Contraseña
-                  <input
-                    type="password"
-                    value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                    className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
-                    placeholder="Ingresa tu contraseña"
-                  />
-                </label>
+                  <label className="space-y-2 text-sm text-textSecondary">
+                    Nombre de usuario
+                    <input
+                      type="text"
+                      value={registerUsername}
+                      onChange={(e) => setRegisterUsername(e.target.value)}
+                      className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                      placeholder="admin"
+                    />
+                  </label>
 
-                <button
-                  type="button"
-                  onClick={handleLogin}
-                  className="w-full rounded-3xl bg-accent px-4 py-3 text-sm font-semibold text-white transition hover:bg-indigo-600"
-                >
-                  Iniciar sesión
-                </button>
+                  <label className="space-y-2 text-sm text-textSecondary">
+                    Email
+                    <input
+                      type="email"
+                      value={registerEmail}
+                      onChange={(e) => setRegisterEmail(e.target.value)}
+                      className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                      placeholder="admin@empresa.com"
+                    />
+                  </label>
 
-                <div className="text-center text-xs text-textSecondary mt-6">
-                  <p>Usuarios de demo:</p>
-                  <p><strong>admin</strong> / admin123</p>
-                  <p><strong>laura</strong> / laura123</p>
-                  <p><strong>carlos</strong> / carlos123</p>
-                  <p><strong>maria</strong> / maria123</p>
+                  <label className="space-y-2 text-sm text-textSecondary">
+                    Contraseña
+                    <input
+                      type="password"
+                      value={registerPassword}
+                      onChange={(e) => setRegisterPassword(e.target.value)}
+                      className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                      placeholder="Mínimo 6 caracteres"
+                    />
+                  </label>
+
+                  <label className="space-y-2 text-sm text-textSecondary">
+                    Confirmar contraseña
+                    <input
+                      type="password"
+                      value={registerConfirmPassword}
+                      onChange={(e) => setRegisterConfirmPassword(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleFirstAdminCreate()}
+                      className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                      placeholder="Repetir contraseña"
+                    />
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={handleFirstAdminCreate}
+                    className="w-full rounded-3xl bg-accent px-4 py-3 text-sm font-semibold text-white transition hover:bg-indigo-600"
+                  >
+                    Crear administrador
+                  </button>
                 </div>
-              </div>
+              )}
+
+              {authMode === 'login' && !needsFirstAdmin && (
+                <div className="space-y-4">
+                  <label className="space-y-2 text-sm text-textSecondary">
+                    Usuario
+                    <input
+                      type="text"
+                      value={loginUsername}
+                      onChange={(e) => setLoginUsername(e.target.value)}
+                      className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                      placeholder="Ingresa tu usuario"
+                    />
+                  </label>
+
+                  <label className="space-y-2 text-sm text-textSecondary">
+                    Contraseña
+                    <input
+                      type="password"
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                      className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                      placeholder="Ingresa tu contraseña"
+                    />
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={handleLogin}
+                    className="w-full rounded-3xl bg-accent px-4 py-3 text-sm font-semibold text-white transition hover:bg-indigo-600"
+                  >
+                    Iniciar sesión
+                  </button>
+
+                  <div className="text-center">
+                    <button
+                      type="button"
+                      onClick={() => setAuthMode('register')}
+                      className="text-sm text-accent hover:text-indigo-400 transition"
+                    >
+                      ¿No tienes cuenta? Regístrate
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {authMode === 'register' && !needsFirstAdmin && (
+                <div className="space-y-4">
+                  <div className="rounded-3xl bg-yellow-900/20 border border-yellow-600/30 p-4">
+                    <h3 className="font-semibold text-yellow-300 mb-2">📝 Registro de usuario</h3>
+                    <p className="text-sm text-yellow-200">Tu cuenta quedará pendiente de aprobación</p>
+                  </div>
+
+                  <label className="space-y-2 text-sm text-textSecondary">
+                    Nombre de usuario
+                    <input
+                      type="text"
+                      value={registerUsername}
+                      onChange={(e) => setRegisterUsername(e.target.value)}
+                      className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                      placeholder="usuario123"
+                    />
+                  </label>
+
+                  <label className="space-y-2 text-sm text-textSecondary">
+                    Email
+                    <input
+                      type="email"
+                      value={registerEmail}
+                      onChange={(e) => setRegisterEmail(e.target.value)}
+                      className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                      placeholder="usuario@email.com"
+                    />
+                  </label>
+
+                  <label className="space-y-2 text-sm text-textSecondary">
+                    Contraseña
+                    <input
+                      type="password"
+                      value={registerPassword}
+                      onChange={(e) => setRegisterPassword(e.target.value)}
+                      className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                      placeholder="Mínimo 6 caracteres"
+                    />
+                  </label>
+
+                  <label className="space-y-2 text-sm text-textSecondary">
+                    Confirmar contraseña
+                    <input
+                      type="password"
+                      value={registerConfirmPassword}
+                      onChange={(e) => setRegisterConfirmPassword(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleRegister()}
+                      className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                      placeholder="Repetir contraseña"
+                    />
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={handleRegister}
+                    className="w-full rounded-3xl bg-accent px-4 py-3 text-sm font-semibold text-white transition hover:bg-indigo-600"
+                  >
+                    Registrarse
+                  </button>
+
+                  <div className="text-center">
+                    <button
+                      type="button"
+                      onClick={() => setAuthMode('login')}
+                      className="text-sm text-accent hover:text-indigo-400 transition"
+                    >
+                      ¿Ya tienes cuenta? Inicia sesión
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -750,7 +1022,7 @@ function App() {
       {page !== 'login' && (
         <div className="min-h-screen bg-surface text-textPrimary">
           <div className="lg:flex">
-            <Sidebar active={page} onSelect={setPage} />
+            <Sidebar active={page} onSelect={setPage} currentUserData={currentUserData} />
             <main className="flex-1 px-4 py-6 lg:px-10">
               <div className="mb-8 grid gap-4 lg:grid-cols-[1fr_300px] lg:items-center">
                 <div>
@@ -774,7 +1046,16 @@ function App() {
                   </button>
                   {currentUser && (
                     <div className="flex items-center gap-2">
-                      <span className="text-sm text-textSecondary">Usuario: {currentUser}</span>
+                      <span className="text-sm text-textSecondary">Usuario: {currentUser} ({currentUserData?.rol})</span>
+                      {usuariosPendientes.length > 0 && currentUserData?.rol === 'admin' && (
+                        <button
+                          type="button"
+                          onClick={() => setPage('admin')}
+                          className="relative rounded-full bg-red-600 px-3 py-1 text-xs text-white transition hover:bg-red-500"
+                        >
+                          {usuariosPendientes.length} pendientes
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={handleLogout}
@@ -1420,6 +1701,69 @@ function App() {
                     </div>
                   </div>
                 </div>
+              </div>
+            </section>
+          )}
+
+          {page === 'admin' && currentUserData?.rol === 'admin' && (
+            <section className="space-y-6">
+              <div className="rounded-3xl bg-panel p-6 shadow-panel">
+                <div>
+                  <h3 className="text-2xl font-semibold">Administración de usuarios</h3>
+                  <p className="mt-1 text-sm text-textSecondary">Gestiona las solicitudes de registro de nuevos usuarios.</p>
+                </div>
+
+                {usuariosPendientes.length === 0 ? (
+                  <div className="mt-6 rounded-3xl bg-surface p-8 text-center">
+                    <div className="text-4xl mb-4">✅</div>
+                    <h4 className="font-semibold text-textPrimary mb-2">No hay solicitudes pendientes</h4>
+                    <p className="text-textSecondary">Todas las solicitudes de registro han sido procesadas.</p>
+                  </div>
+                ) : (
+                  <div className="mt-6">
+                    <h4 className="font-semibold text-textPrimary mb-4">
+                      Solicitudes pendientes ({usuariosPendientes.length})
+                    </h4>
+                    <div className="space-y-4">
+                      {usuariosPendientes.map((usuario) => (
+                        <div key={usuario.id} className="rounded-3xl bg-surface p-6 border border-border">
+                          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-3 mb-2">
+                                <h5 className="font-semibold text-textPrimary">{usuario.username}</h5>
+                                <span className="rounded-full bg-yellow-600 px-2 py-1 text-xs text-white">
+                                  Pendiente
+                                </span>
+                              </div>
+                              <p className="text-sm text-textSecondary mb-1">
+                                📧 {usuario.email}
+                              </p>
+                              <p className="text-xs text-textSecondary">
+                                Registrado: {new Date(usuario.created_at).toLocaleString('es-AR')}
+                              </p>
+                            </div>
+                            <div className="flex gap-3">
+                              <button
+                                type="button"
+                                onClick={() => handleAprobarUsuario(usuario.id)}
+                                className="rounded-3xl bg-green-700 px-4 py-2 text-sm font-semibold text-green-100 transition hover:bg-green-600"
+                              >
+                                ✅ Aprobar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleRechazarUsuario(usuario.id)}
+                                className="rounded-3xl bg-red-700 px-4 py-2 text-sm font-semibold text-red-100 transition hover:bg-red-600"
+                              >
+                                ❌ Rechazar
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </section>
           )}

@@ -393,3 +393,189 @@ export async function obtenerAuditoria(): Promise<any[]> {
     return [];
   }
 }
+
+// Funciones de usuarios
+export async function crearPrimerAdmin(username: string, email: string, password: string) {
+  try {
+    // Verificar que no existan usuarios
+    const { data: existingUsers, error: checkError } = await supabase
+      .from('usuarios')
+      .select('id')
+      .limit(1);
+
+    if (checkError && checkError.code !== 'PGRST116') {
+      throw checkError;
+    }
+
+    if (existingUsers && existingUsers.length > 0) {
+      throw new Error('Ya existe un administrador en el sistema');
+    }
+
+    // Crear hash simple de contraseña (en producción usar bcrypt)
+    const passwordHash = btoa(password);
+
+    const { data, error } = await supabase
+      .from('usuarios')
+      .insert({
+        id: crypto.randomUUID(),
+        username,
+        email,
+        password_hash: passwordHash,
+        rol: 'admin',
+        estado: 'aprobado'
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Error creando primer admin:', error);
+    throw error;
+  }
+}
+
+export async function registrarUsuario(username: string, email: string, password: string, creado_por?: string) {
+  try {
+    // Verificar que el username no exista
+    const { data: existingUser, error: checkError } = await supabase
+      .from('usuarios')
+      .select('id')
+      .eq('username', username)
+      .single();
+
+    if (existingUser) {
+      throw new Error('El nombre de usuario ya existe');
+    }
+
+    if (checkError && checkError.code !== 'PGRST116') {
+      throw checkError;
+    }
+
+    // Crear hash simple de contraseña
+    const passwordHash = btoa(password);
+
+    const { data, error } = await supabase
+      .from('usuarios')
+      .insert({
+        id: crypto.randomUUID(),
+        username,
+        email,
+        password_hash: passwordHash,
+        rol: 'usuario',
+        estado: 'pendiente',
+        creado_por
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Error registrando usuario:', error);
+    throw error;
+  }
+}
+
+export async function autenticarUsuario(username: string, password: string) {
+  try {
+    const passwordHash = btoa(password);
+
+    const { data, error } = await supabase
+      .from('usuarios')
+      .select('*')
+      .eq('username', username)
+      .eq('password_hash', passwordHash)
+      .eq('estado', 'aprobado')
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        throw new Error('Usuario o contraseña incorrectos');
+      }
+      throw error;
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Error autenticando usuario:', error);
+    throw error;
+  }
+}
+
+export async function obtenerUsuariosPendientes() {
+  try {
+    const { data, error } = await supabase
+      .from('usuarios')
+      .select('*')
+      .eq('estado', 'pendiente')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
+  } catch (error) {
+    console.error('Error obteniendo usuarios pendientes:', error);
+    return [];
+  }
+}
+
+export async function aprobarUsuario(userId: string, aprobadoPor: string) {
+  try {
+    const { data, error } = await supabase
+      .from('usuarios')
+      .update({
+        estado: 'aprobado',
+        aprobado_por: aprobadoPor,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', userId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Error aprobando usuario:', error);
+    throw error;
+  }
+}
+
+export async function rechazarUsuario(userId: string, aprobadoPor: string) {
+  try {
+    const { data, error } = await supabase
+      .from('usuarios')
+      .update({
+        estado: 'rechazado',
+        aprobado_por: aprobadoPor,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', userId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Error rechazando usuario:', error);
+    throw error;
+  }
+}
+
+export async function verificarPrimerAdmin(): Promise<boolean> {
+  try {
+    const { data, error } = await supabase
+      .from('usuarios')
+      .select('id')
+      .eq('rol', 'admin')
+      .limit(1);
+
+    if (error && error.code !== 'PGRST116') {
+      throw error;
+    }
+
+    return !data || data.length === 0;
+  } catch (error) {
+    console.error('Error verificando primer admin:', error);
+    return true; // Asumir que no hay admin si hay error
+  }
+}
