@@ -1,8 +1,0 @@
-              <Toast toasts={toasts} onRemove={removeToast} />
-            </main>
-          </div>
-        </div>
-      )}
-    </>
-  );
-}
