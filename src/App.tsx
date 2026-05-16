@@ -354,10 +354,22 @@ function App() {
               talle: product.talle,
               color: product.color,
               precio: findProductPrice(product, invoiceClienteActual?.cat ?? 'general'),
-              query: '',
+              query: '', // Limpiar la búsqueda
             }
       )
     );
+
+    // Forzar la actualización del DOM para ocultar el dropdown
+    setTimeout(() => {
+      // Buscar el input específico del row y hacerle blur para ocultar el dropdown
+      const inputs = document.querySelectorAll('input[placeholder="Buscar producto..."]');
+      inputs.forEach((input) => {
+        const htmlInput = input as HTMLInputElement;
+        if (htmlInput.value === '') {
+          htmlInput.blur();
+        }
+      });
+    }, 50);
   };
 
   const updateClientPrices = (clienteId: string) => {
@@ -1228,22 +1240,43 @@ function App() {
                             <input
                               value={row.query}
                               onChange={(event) => handleRowChange(row.rowKey, 'query', event.target.value)}
+                              onKeyDown={(event) => {
+                                if (event.key === 'Enter' && matches.length > 0) {
+                                  event.preventDefault();
+                                  updateRowProduct(row.rowKey, matches[0]);
+                                }
+                                if (event.key === 'Escape') {
+                                  event.preventDefault();
+                                  handleRowChange(row.rowKey, 'query', '');
+                                  (event.target as HTMLInputElement).blur();
+                                }
+                              }}
                               placeholder="Buscar producto..."
                               className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm outline-none transition focus:border-accent"
                             />
-                            {matches.length > 0 && (
-                              <div className="absolute left-0 top-full z-20 mt-2 max-h-60 w-full overflow-auto rounded-3xl border border-border bg-panel shadow-xl">
-                                {matches.slice(0, 6).map((product) => (
+                            {matches.length > 0 && row.query && row.query.trim().length > 0 && !row.prodId && (
+                              <div className="absolute left-0 top-full z-50 mt-2 max-h-60 w-full overflow-auto rounded-3xl border border-border bg-panel shadow-2xl">
+                                {matches.slice(0, 6).map((product, index) => (
                                   <button
                                     key={product.id}
                                     type="button"
-                                    onClick={() => updateRowProduct(row.rowKey, product)}
-                                    className="w-full px-4 py-3 text-left text-sm text-textPrimary transition hover:bg-surface"
+                                    onClick={() => {
+                                      updateRowProduct(row.rowKey, product);
+                                    }}
+                                    className="w-full px-4 py-3 text-left text-sm text-textPrimary transition hover:bg-surface border-b border-border last:border-b-0"
                                   >
-                                    <span className="font-semibold">{product.nombre}</span>
-                                    <span className="ml-2 text-textSecondary">{product.talle} • {product.color}</span>
+                                    <div className="flex flex-col">
+                                      <span className="font-semibold text-textPrimary">{product.nombre}</span>
+                                      <span className="text-xs text-textSecondary">{product.categoria} • {product.talle} • {product.color}</span>
+                                      <span className="text-xs text-accent font-medium">{formatMoney(product.precio)}</span>
+                                    </div>
                                   </button>
                                 ))}
+                                {matches.length === 0 && row.query.trim().length > 2 && (
+                                  <div className="px-4 py-3 text-sm text-textSecondary">
+                                    No se encontraron productos
+                                  </div>
+                                )}
                               </div>
                             )}
                             {row.prodId && (
