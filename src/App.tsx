@@ -1030,13 +1030,13 @@ function App() {
               {authMode === 'login' && !needsFirstAdmin && (
                 <div className="space-y-4">
                   <label className="space-y-2 text-sm text-textSecondary">
-                    Usuario
+                    Usuario o Email
                     <input
                       type="text"
                       value={loginUsername}
                       onChange={(e) => setLoginUsername(e.target.value)}
                       className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
-                      placeholder="Ingresa tu usuario"
+                      placeholder="Usuario o email (mayús/minús)"
                     />
                   </label>
 
@@ -1131,7 +1131,10 @@ function App() {
 
                   <button
                     type="button"
-                    onClick={handleRegister}
+                    onClick={() => {
+                      console.log('🔘 Botón registrarse clickeado');
+                      handleRegister();
+                    }}
                     className="w-full rounded-3xl bg-accent px-4 py-3 text-sm font-semibold text-white transition hover:bg-indigo-600"
                   >
                     Registrarse
@@ -1157,7 +1160,7 @@ function App() {
         <div className="min-h-screen bg-surface text-textPrimary">
           <div className="lg:flex">
             <Sidebar active={page} onSelect={setPage} currentUserData={currentUserData} />
-            <main className="flex-1 px-4 py-6 lg:px-10">
+            <main className="flex-1 px-4 py-6 lg:px-10 overflow-visible">
               <div className="mb-8 grid gap-4 lg:grid-cols-[1fr_300px] lg:items-center">
                 <div>
                   <p className="text-sm uppercase tracking-[0.2em] text-textSecondary">Portal</p>
@@ -1203,8 +1206,8 @@ function App() {
               </div>
 
           {page === 'dashboard' && (
-            <section className="space-y-6">
-              <div className="rounded-3xl bg-panel p-6 shadow-panel">
+            <section className="space-y-6 overflow-visible">
+              <div className="rounded-3xl bg-panel p-6 shadow-panel overflow-visible">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                   <div>
                     <p className="text-sm text-textSecondary">Factura nueva</p>
@@ -1251,10 +1254,14 @@ function App() {
                         <div key={row.rowKey} className="grid grid-cols-[2fr_80px_120px_120px_80px] gap-4 px-5 py-4 items-start">
                           <div className="relative">
                             <input
-                              value={row.query}
-                              onChange={(event) => handleRowChange(row.rowKey, 'query', event.target.value)}
+                              value={row.prodId ? row.nombre : row.query}
+                              onChange={(event) => {
+                                if (!row.prodId) {
+                                  handleRowChange(row.rowKey, 'query', event.target.value);
+                                }
+                              }}
                               onKeyDown={(event) => {
-                                if (event.key === 'Enter' && matches.length > 0) {
+                                if (event.key === 'Enter' && matches.length > 0 && !row.prodId) {
                                   event.preventDefault();
                                   updateRowProduct(row.rowKey, matches[0]);
                                 }
@@ -1263,9 +1270,22 @@ function App() {
                                   handleRowChange(row.rowKey, 'query', '');
                                   (event.target as HTMLInputElement).blur();
                                 }
+                                if (event.key === 'Backspace' && row.prodId) {
+                                  // Permitir eliminar producto seleccionado con Backspace
+                                  event.preventDefault();
+                                  handleRowChange(row.rowKey, 'prodId', '');
+                                  handleRowChange(row.rowKey, 'nombre', '');
+                                  handleRowChange(row.rowKey, 'categoria', '');
+                                  handleRowChange(row.rowKey, 'talle', '');
+                                  handleRowChange(row.rowKey, 'color', '');
+                                  handleRowChange(row.rowKey, 'query', '');
+                                }
                               }}
-                              placeholder="Buscar producto..."
-                              className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm outline-none transition focus:border-accent"
+                              placeholder={row.prodId ? "Producto seleccionado (Backspace para cambiar)" : "Buscar producto..."}
+                              className={`w-full rounded-3xl border border-border px-4 py-3 text-sm outline-none transition focus:border-accent ${
+                                row.prodId ? 'bg-green-900/20 text-green-300 border-green-600' : 'bg-surface text-textPrimary'
+                              }`}
+                              readOnly={!!row.prodId}
                             />
                             {matches.length > 0 && row.query && row.query.trim().length > 0 && !row.prodId && (
                               <div className="absolute left-0 top-full z-[60] mt-2 max-h-60 w-full overflow-auto rounded-3xl border border-border bg-panel shadow-2xl">
@@ -1291,11 +1311,6 @@ function App() {
                                   </div>
                                 )}
                               </div>
-                            )}
-                            {row.prodId && (
-                              <p className="mt-2 text-sm text-textSecondary">
-                                {row.categoria} • {row.talle} • {row.color}
-                              </p>
                             )}
                           </div>
                           <label className="space-y-2 text-sm text-textSecondary">

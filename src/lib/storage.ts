@@ -499,16 +499,17 @@ export async function registrarUsuario(username: string, email: string, password
   }
 }
 
-export async function autenticarUsuario(username: string, password: string) {
+export async function autenticarUsuario(usernameOrEmail: string, password: string) {
   try {
-    console.log('🔍 Autenticando usuario:', username);
+    console.log('🔍 Autenticando usuario:', usernameOrEmail);
     const passwordHash = btoa(password);
     console.log('🔐 Password hash generado para comparación');
 
+    // Buscar por username O email (case-insensitive)
     const { data, error } = await supabase
       .from('usuarios')
       .select('*')
-      .eq('username', username)
+      .or(`username.ilike.${usernameOrEmail},email.ilike.${usernameOrEmail}`)
       .eq('password_hash', passwordHash)
       .eq('estado', 'aprobado');
 
@@ -527,6 +528,7 @@ export async function autenticarUsuario(username: string, password: string) {
     const usuario = data[0];
     console.log('✅ Usuario autenticado correctamente:', {
       username: usuario.username,
+      email: usuario.email,
       rol: usuario.rol,
       estado: usuario.estado
     });
