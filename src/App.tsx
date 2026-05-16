@@ -16,9 +16,11 @@ import {
   saveFacturas,
   savePagos,
   saveProductos,
+  registrarAccion,
+  obtenerAuditoria,
 } from './lib/storage';
 
-type Page = 'dashboard' | 'clientes' | 'cuenta' | 'historial' | 'nuevo-cliente' | 'productos' | 'backup';
+type Page = 'dashboard' | 'clientes' | 'cuenta' | 'historial' | 'nuevo-cliente' | 'productos' | 'backup' | 'login';
 
 interface RowFactura extends FacturaItem {
   query: string;
@@ -31,6 +33,105 @@ const formasPago: FormaPago[] = ['Efectivo', 'Transferencia', 'Cheque', 'Tarjeta
 
 // Helper para campos numéricos sin mostrar 0
 const formatNumberInput = (value: number) => value === 0 ? '' : value.toString();
+
+// Función para imprimir factura
+const printInvoice = (factura: Factura, cliente: Cliente) => {
+  const printContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Factura ${factura.id}</title>
+      <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: white; color: black; }
+        .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 20px; margin-bottom: 30px; }
+        .company-name { font-size: 24px; font-weight: bold; margin-bottom: 10px; }
+        .invoice-title { font-size: 18px; color: #666; }
+        .invoice-details { display: flex; justify-content: space-between; margin-bottom: 30px; }
+        .client-info, .invoice-info { width: 48%; }
+        .section-title { font-weight: bold; font-size: 14px; margin-bottom: 10px; color: #333; }
+        .info-line { margin: 5px 0; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        th { background-color: #f5f5f5; font-weight: bold; }
+        .text-right { text-align: right; }
+        .total-row { font-weight: bold; background-color: #f9f9f9; }
+        .footer { margin-top: 40px; text-align: center; color: #666; font-size: 12px; }
+        @media print {
+          body { margin: 0; }
+          .no-print { display: none; }
+        }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <div class="company-name">CUENTA CORRIENTE MAYORISTA</div>
+        <div class="invoice-title">Comprobante de Factura</div>
+      </div>
+
+      <div class="invoice-details">
+        <div class="client-info">
+          <div class="section-title">DATOS DEL CLIENTE</div>
+          <div class="info-line"><strong>Nombre:</strong> ${cliente.nombre}</div>
+          <div class="info-line"><strong>Email:</strong> ${cliente.email || 'No especificado'}</div>
+          <div class="info-line"><strong>Teléfono:</strong> ${cliente.tel || 'No especificado'}</div>
+          <div class="info-line"><strong>Categoría:</strong> ${cliente.cat === 'especial' ? 'Especial' : 'General'}</div>
+        </div>
+
+        <div class="invoice-info">
+          <div class="section-title">DATOS DE LA FACTURA</div>
+          <div class="info-line"><strong>Número:</strong> #${factura.id.slice(-8).toUpperCase()}</div>
+          <div class="info-line"><strong>Fecha:</strong> ${factura.fecha}</div>
+          <div class="info-line"><strong>Total:</strong> ${formatMoney(factura.total)}</div>
+        </div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Producto</th>
+            <th>Descripción</th>
+            <th class="text-right">Cantidad</th>
+            <th class="text-right">Precio Unit.</th>
+            <th class="text-right">Subtotal</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${factura.items.map(item => `
+            <tr>
+              <td><strong>${item.nombre}</strong></td>
+              <td>${item.categoria} • ${item.talle} • ${item.color}</td>
+              <td class="text-right">${item.cant}</td>
+              <td class="text-right">${formatMoney(item.precio)}</td>
+              <td class="text-right">${formatMoney(item.cant * item.precio)}</td>
+            </tr>
+          `).join('')}
+          <tr class="total-row">
+            <td colspan="4" class="text-right"><strong>TOTAL GENERAL</strong></td>
+            <td class="text-right"><strong>${formatMoney(factura.total)}</strong></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="footer">
+        <p>Comprobante generado el ${new Date().toLocaleDateString('es-AR')} a las ${new Date().toLocaleTimeString('es-AR')}</p>
+        <p>Sistema de Cuenta Corriente Mayorista</p>
+      </div>
+
+      <div class="no-print" style="text-align: center; margin-top: 30px;">
+        <button onclick="window.print()" style="padding: 10px 20px; background: #6366F1; color: white; border: none; border-radius: 5px; cursor: pointer;">Imprimir</button>
+        <button onclick="window.close()" style="padding: 10px 20px; background: #666; color: white; border: none; border-radius: 5px; cursor: pointer; margin-left: 10px;">Cerrar</button>
+      </div>
+    </body>
+    </html>
+  `;
+
+  const printWindow = window.open('', '_blank');
+  if (printWindow) {
+    printWindow.document.write(printContent);
+    printWindow.document.close();
+    printWindow.focus();
+  }
+};
 
 function App() {
   const { toasts, removeToast, success, error } = useToast();
@@ -71,8 +172,25 @@ function App() {
   const [backupText, setBackupText] = useState('');
   const [backupMessage, setBackupMessage] = useState('');
   const [backupError, setBackupError] = useState('');
+  const [selectedInvoice, setSelectedInvoice] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<string | null>(null);
+  const [loginUsername, setLoginUsername] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
 
   useEffect(() => {
+    // Verificar si hay un usuario logueado
+    const savedUser = localStorage.getItem('currentUser');
+    if (savedUser) {
+      setCurrentUser(savedUser);
+    } else {
+      setPage('login');
+    }
+  }, []);
+
+  useEffect(() => {
+    // Solo cargar datos si hay un usuario logueado
+    if (!currentUser) return;
+
     const loadData = async () => {
       const [clientesData, productosData, facturasData, pagosData] = await Promise.all([
         loadClientes(),
@@ -88,7 +206,7 @@ function App() {
     };
 
     loadData();
-  }, []);
+  }, [currentUser]);
 
   useEffect(() => {
     if (!invoiceClient && clientes.length > 0) {
@@ -239,6 +357,18 @@ function App() {
     const nextFacturas = [factura, ...facturas];
     setFacturas(nextFacturas);
     await saveFacturas(nextFacturas);
+
+    // Registrar auditoría
+    if (currentUser) {
+      await registrarAccion(
+        currentUser,
+        'Crear factura',
+        'factura',
+        factura.id,
+        `Factura por ${formatMoney(factura.total)} para ${invoiceClienteActual?.nombre}`
+      );
+    }
+
     setRows([
       { rowKey: 'r0', prodId: '', nombre: '', categoria: '', talle: '', color: '', cant: 1, precio: 0, query: '' },
     ]);
@@ -278,7 +408,19 @@ function App() {
       const nextClientes = [cliente, ...clientes];
       setClientes(nextClientes);
       await saveClientes(nextClientes);
-      success('Cliente agregado exitosamente');
+
+      // Registrar auditoría
+      if (currentUser) {
+        await registrarAccion(
+          currentUser,
+          editingClient ? 'Editar cliente' : 'Agregar cliente',
+          'cliente',
+          cliente.id,
+          `Cliente: ${cliente.nombre} (${cliente.cat})`
+        );
+      }
+
+      success(editingClient ? 'Cliente actualizado exitosamente' : 'Cliente agregado exitosamente');
     }
 
     setNewClientNombre('');
@@ -325,6 +467,18 @@ function App() {
     const nextClientes = clientes.filter(c => c.id !== clientId);
     setClientes(nextClientes);
     await saveClientes(nextClientes);
+
+    // Registrar auditoría
+    if (currentUser) {
+      await registrarAccion(
+        currentUser,
+        'Eliminar cliente',
+        'cliente',
+        clientId,
+        `Cliente: ${client?.nombre || 'Desconocido'}`
+      );
+    }
+
     success('Cliente eliminado exitosamente');
 
     // Si estaba seleccionado, cambiar a otro cliente
@@ -349,6 +503,19 @@ function App() {
     const nextPagos = [pago, ...pagos];
     setPagos(nextPagos);
     await savePagos(nextPagos);
+
+    // Registrar auditoría
+    if (currentUser) {
+      const cliente = clientes.find(c => c.id === paymentClienteId);
+      await registrarAccion(
+        currentUser,
+        'Registrar pago',
+        'pago',
+        pago.id,
+        `${formatMoney(paymentAmount)} (${paymentForm}) - ${cliente?.nombre || 'Cliente desconocido'}`
+      );
+    }
+
     setPaymentModalOpen(false);
     setPaymentAmount(0);
     setPaymentNotes('');
@@ -381,7 +548,19 @@ function App() {
       const nextProductos = [nuevo, ...productos];
       setProductos(nextProductos);
       await saveProductos(nextProductos);
-      success('Producto agregado exitosamente');
+
+      // Registrar auditoría
+      if (currentUser) {
+        await registrarAccion(
+          currentUser,
+          productEdit ? 'Editar producto' : 'Agregar producto',
+          'producto',
+          nuevo.id,
+          `${nuevo.nombre} - ${nuevo.categoria} (${formatMoney(nuevo.precio)})`
+        );
+      }
+
+      success(productEdit ? 'Producto actualizado exitosamente' : 'Producto agregado exitosamente');
     }
     setNewProducto({ nombre: '', categoria: '', talle: '', color: '', precio: 0, precioEsp: 0 });
   };
@@ -408,6 +587,18 @@ function App() {
     const next = productos.filter((item) => item.id !== id);
     setProductos(next);
     await saveProductos(next);
+
+    // Registrar auditoría
+    if (currentUser) {
+      await registrarAccion(
+        currentUser,
+        'Eliminar producto',
+        'producto',
+        id,
+        `${producto?.nombre || 'Desconocido'} - ${producto?.categoria || ''}`
+      );
+    }
+
     success('Producto eliminado exitosamente');
   };
 
@@ -465,6 +656,35 @@ function App() {
     reader.readAsText(file);
   };
 
+  // Funciones de autenticación
+  const handleLogin = () => {
+    // Usuarios predefinidos (en producción esto sería contra una base de datos)
+    const users = {
+      'admin': 'admin123',
+      'laura': 'laura123',
+      'carlos': 'carlos123',
+      'maria': 'maria123'
+    };
+
+    if (users[loginUsername as keyof typeof users] === loginPassword) {
+      setCurrentUser(loginUsername);
+      localStorage.setItem('currentUser', loginUsername);
+      setPage('dashboard');
+      setLoginUsername('');
+      setLoginPassword('');
+      success(`Bienvenido ${loginUsername}!`);
+    } else {
+      error('Usuario o contraseña incorrectos');
+    }
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    localStorage.removeItem('currentUser');
+    setPage('login');
+    success('Sesión cerrada correctamente');
+  };
+
   const productList = productos.filter((item) =>
     [item.nombre, item.categoria, item.talle, item.color].some((value) =>
       value.toLowerCase().includes(productFilter.toLowerCase())
@@ -472,32 +692,100 @@ function App() {
   );
 
   return (
-    <div className="min-h-screen bg-surface text-textPrimary">
-      <div className="lg:flex">
-        <Sidebar active={page} onSelect={setPage} />
-        <main className="flex-1 px-4 py-6 lg:px-10">
-          <div className="mb-8 grid gap-4 lg:grid-cols-[1fr_300px] lg:items-center">
-            <div>
-              <p className="text-sm uppercase tracking-[0.2em] text-textSecondary">Portal</p>
-              <h2 className="mt-3 text-xl font-semibold sm:text-3xl">Cuenta corriente mayorista</h2>
-            </div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
-              <button
-                type="button"
-                onClick={() => setPage('dashboard')}
-                className="rounded-3xl bg-panel px-4 py-3 text-sm font-medium text-textPrimary shadow-sm ring-1 ring-border transition hover:bg-border"
-              >
-                Nueva factura
-              </button>
-              <button
-                type="button"
-                onClick={() => setPage('clientes')}
-                className="rounded-3xl bg-panel px-4 py-3 text-sm font-medium text-textPrimary shadow-sm ring-1 ring-border transition hover:bg-border"
-              >
-                Clientes
-              </button>
+    <>
+      {page === 'login' && (
+        <div className="min-h-screen bg-surface text-textPrimary">
+            <div className="w-full max-w-md">
+            <div className="rounded-3xl bg-panel p-8 shadow-panel">
+              <div className="text-center mb-8">
+                <h1 className="text-3xl font-bold text-textPrimary">Cuenta Corriente</h1>
+                <p className="mt-2 text-textSecondary">Sistema Mayorista</p>
+              </div>
+
+              <div className="space-y-4">
+                <label className="space-y-2 text-sm text-textSecondary">
+                  Usuario
+                  <input
+                    type="text"
+                    value={loginUsername}
+                    onChange={(e) => setLoginUsername(e.target.value)}
+                    className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                    placeholder="Ingresa tu usuario"
+                  />
+                </label>
+
+                <label className="space-y-2 text-sm text-textSecondary">
+                  Contraseña
+                  <input
+                    type="password"
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                    className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                    placeholder="Ingresa tu contraseña"
+                  />
+                </label>
+
+                <button
+                  type="button"
+                  onClick={handleLogin}
+                  className="w-full rounded-3xl bg-accent px-4 py-3 text-sm font-semibold text-white transition hover:bg-indigo-600"
+                >
+                  Iniciar sesión
+                </button>
+
+                <div className="text-center text-xs text-textSecondary mt-6">
+                  <p>Usuarios de demo:</p>
+                  <p><strong>admin</strong> / admin123</p>
+                  <p><strong>laura</strong> / laura123</p>
+                  <p><strong>carlos</strong> / carlos123</p>
+                  <p><strong>maria</strong> / maria123</p>
+                </div>
+              </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {page !== 'login' && (
+        <div className="min-h-screen bg-surface text-textPrimary">
+          <div className="lg:flex">
+            <Sidebar active={page} onSelect={setPage} />
+            <main className="flex-1 px-4 py-6 lg:px-10">
+              <div className="mb-8 grid gap-4 lg:grid-cols-[1fr_300px] lg:items-center">
+                <div>
+                  <p className="text-sm uppercase tracking-[0.2em] text-textSecondary">Portal</p>
+                  <h2 className="mt-3 text-xl font-semibold sm:text-3xl">Cuenta corriente mayorista</h2>
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setPage('dashboard')}
+                    className="rounded-3xl bg-panel px-4 py-3 text-sm font-medium text-textPrimary shadow-sm ring-1 ring-border transition hover:bg-border"
+                  >
+                    Nueva factura
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPage('clientes')}
+                    className="rounded-3xl bg-panel px-4 py-3 text-sm font-medium text-textPrimary shadow-sm ring-1 ring-border transition hover:bg-border"
+                  >
+                    Clientes
+                  </button>
+                  {currentUser && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-textSecondary">Usuario: {currentUser}</span>
+                      <button
+                        type="button"
+                        onClick={handleLogout}
+                        className="rounded-3xl bg-red-900 px-4 py-3 text-sm font-medium text-red-300 shadow-sm transition hover:bg-red-800"
+                      >
+                        Cerrar sesión
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
 
           {page === 'dashboard' && (
             <section className="space-y-6">
@@ -839,6 +1127,7 @@ function App() {
                         <th className="px-5 py-4 text-left">Cliente</th>
                         <th className="px-5 py-4 text-left">Ítems</th>
                         <th className="px-5 py-4 text-left">Total</th>
+                        <th className="px-5 py-4 text-left">Acciones</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -853,6 +1142,25 @@ function App() {
                               {factura.items.map((item) => `${item.nombre} ×${item.cant}`).join(', ')}
                             </td>
                             <td className="px-5 py-4 font-semibold">{formatMoney(factura.total)}</td>
+                            <td className="px-5 py-4">
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => cliente && printInvoice(factura, cliente)}
+                                  className="rounded-3xl bg-blue-900 px-3 py-2 text-xs text-blue-300 transition hover:bg-blue-800"
+                                  disabled={!cliente}
+                                >
+                                  🖨️ Imprimir
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedInvoice(factura.id)}
+                                  className="rounded-3xl bg-surface px-3 py-2 text-xs text-textPrimary transition hover:bg-border"
+                                >
+                                  👁️ Ver detalles
+                                </button>
+                              </div>
+                            </td>
                           </tr>
                         );
                       })}
@@ -1173,6 +1481,8 @@ function App() {
               </div>
             </section>
           )}
+
+          <Toast toasts={toasts} onRemove={removeToast} />
         </main>
       </div>
 
@@ -1255,8 +1565,101 @@ function App() {
         </div>
       </Modal>
 
-      <Toast toasts={toasts} onRemove={removeToast} />
-    </div>
+      {/* Modal de detalles de factura */}
+      <Modal
+        open={!!selectedInvoice}
+        onClose={() => setSelectedInvoice(null)}
+        title="Detalles de la Factura"
+      >
+        {selectedInvoice && (() => {
+          const factura = facturas.find(f => f.id === selectedInvoice);
+          const cliente = clientes.find(c => c.id === factura?.clienteId);
+          if (!factura || !cliente) return null;
+
+          return (
+            <div className="space-y-6">
+              {/* Info principal */}
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                <div className="rounded-3xl bg-surface p-4">
+                  <h4 className="font-semibold text-textPrimary">Cliente</h4>
+                  <p className="text-textSecondary">{cliente.nombre}</p>
+                  <p className="text-sm text-textSecondary">{cliente.email}</p>
+                  <p className="text-sm text-textSecondary">{cliente.tel}</p>
+                </div>
+                <div className="rounded-3xl bg-surface p-4">
+                  <h4 className="font-semibold text-textPrimary">Factura</h4>
+                  <p className="text-textSecondary">#{factura.id.slice(-8).toUpperCase()}</p>
+                  <p className="text-sm text-textSecondary">{factura.fecha}</p>
+                  <p className="font-semibold text-accent">{formatMoney(factura.total)}</p>
+                </div>
+              </div>
+
+              {/* Productos */}
+              <div>
+                <h4 className="font-semibold text-textPrimary mb-4">Productos facturados</h4>
+                <div className="overflow-hidden rounded-3xl border border-border">
+                  <table className="w-full border-collapse text-sm">
+                    <thead className="bg-surface text-textSecondary">
+                      <tr>
+                        <th className="px-4 py-3 text-left">Producto</th>
+                        <th className="px-4 py-3 text-right">Cant.</th>
+                        <th className="px-4 py-3 text-right">Precio</th>
+                        <th className="px-4 py-3 text-right">Subtotal</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {factura.items.map((item, index) => (
+                        <tr key={index} className="border-t border-border">
+                          <td className="px-4 py-3">
+                            <div className="font-medium">{item.nombre}</div>
+                            <div className="text-xs text-textSecondary">
+                              {item.categoria} • {item.talle} • {item.color}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-right">{item.cant}</td>
+                          <td className="px-4 py-3 text-right">{formatMoney(item.precio)}</td>
+                          <td className="px-4 py-3 text-right font-medium">
+                            {formatMoney(item.cant * item.precio)}
+                          </td>
+                        </tr>
+                      ))}
+                      <tr className="border-t border-border bg-surface">
+                        <td colSpan={3} className="px-4 py-3 text-right font-semibold">
+                          TOTAL:
+                        </td>
+                        <td className="px-4 py-3 text-right font-bold text-accent">
+                          {formatMoney(factura.total)}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Acciones */}
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => printInvoice(factura, cliente)}
+                  className="rounded-3xl bg-blue-900 px-5 py-3 text-sm font-semibold text-blue-300 transition hover:bg-blue-800"
+                >
+                  🖨️ Imprimir comprobante
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedInvoice(null)}
+                  className="rounded-3xl bg-surface px-5 py-3 text-sm font-semibold text-textPrimary transition hover:bg-border"
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
+        </div>
+      )}
+    </>
   );
 }
 

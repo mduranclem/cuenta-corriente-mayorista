@@ -60,3 +60,14 @@ export interface DatabasePago {
   created_at?: string
   updated_at?: string
 }
+
+export interface DatabaseAuditoria {
+  id?: number
+  usuario: string
+  accion: string
+  entidad: 'cliente' | 'producto' | 'factura' | 'pago'
+  entidad_id?: string
+  detalles?: string
+  fecha: string
+  created_at?: string
+}

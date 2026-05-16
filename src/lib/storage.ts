@@ -351,3 +351,45 @@ export async function importBackup(data: BackupPayload) {
 export function clearStorage() {
   throw new Error('clearStorage no está disponible con Supabase. Use la interfaz de Supabase para limpiar datos.');
 }
+
+// Funciones de auditoría
+export async function registrarAccion(
+  usuario: string,
+  accion: string,
+  entidad: 'cliente' | 'producto' | 'factura' | 'pago',
+  entidadId?: string,
+  detalles?: string
+) {
+  try {
+    const { error } = await supabase
+      .from('auditoria')
+      .insert({
+        usuario,
+        accion,
+        entidad,
+        entidad_id: entidadId,
+        detalles,
+        fecha: new Date().toISOString(),
+      });
+
+    if (error) throw error;
+  } catch (error) {
+    console.error('Error registrando acción de auditoría:', error);
+  }
+}
+
+export async function obtenerAuditoria(): Promise<any[]> {
+  try {
+    const { data, error } = await supabase
+      .from('auditoria')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(100);
+
+    if (error) throw error;
+    return data || [];
+  } catch (error) {
+    console.error('Error obteniendo auditoría:', error);
+    return [];
+  }
+}
