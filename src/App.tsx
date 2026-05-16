@@ -386,7 +386,7 @@ function App() {
 
   const filteredProducts = (query: string) => {
     const text = query.toLowerCase().trim();
-    if (!text) return productos; // Mostrar todos los productos si no hay búsqueda
+    if (!text || text.length === 0) return []; // No mostrar productos si no hay búsqueda
     return productos.filter((product) =>
       [product.nombre, product.categoria, product.talle, product.color]
         .some((value) => value.toLowerCase().includes(text))

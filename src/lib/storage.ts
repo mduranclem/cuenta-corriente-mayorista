@@ -459,23 +459,28 @@ export async function crearPrimerAdmin(username: string, email: string, password
 
 export async function registrarUsuario(username: string, email: string, password: string, creado_por?: string) {
   try {
+    console.log('📝 Iniciando registro de usuario:', { username, email });
+
     // Verificar que el username no exista
-    const { data: existingUser, error: checkError } = await supabase
+    const { data: existingUsers, error: checkError } = await supabase
       .from('usuarios')
       .select('id')
-      .eq('username', username)
-      .single();
+      .eq('username', username);
 
-    if (existingUser) {
+    console.log('🔍 Verificación username existente:', { existingUsers, checkError });
+
+    if (existingUsers && existingUsers.length > 0) {
       throw new Error('El nombre de usuario ya existe');
     }
 
-    if (checkError && checkError.code !== 'PGRST116') {
+    if (checkError) {
+      console.error('❌ Error verificando username:', checkError);
       throw checkError;
     }
 
     // Crear hash simple de contraseña
     const passwordHash = btoa(password);
+    console.log('🔐 Hash de contraseña generado');
 
     const { data, error } = await supabase
       .from('usuarios')
@@ -488,14 +493,24 @@ export async function registrarUsuario(username: string, email: string, password
         estado: 'pendiente',
         creado_por
       })
-      .select()
-      .single();
+      .select();
 
-    if (error) throw error;
-    return data;
-  } catch (error) {
-    console.error('Error registrando usuario:', error);
-    throw error;
+    console.log('💾 Resultado inserción usuario:', { data, error });
+
+    if (error) {
+      console.error('❌ Error insertando usuario:', error);
+      throw error;
+    }
+
+    if (!data || data.length === 0) {
+      throw new Error('No se pudo crear el usuario');
+    }
+
+    console.log('✅ Usuario registrado exitosamente:', data[0]);
+    return data[0];
+  } catch (err: any) {
+    console.error('❌ Error general registrando usuario:', err);
+    throw err;
   }
 }
 
@@ -505,15 +520,30 @@ export async function autenticarUsuario(usernameOrEmail: string, password: strin
     const passwordHash = btoa(password);
     console.log('🔐 Password hash generado para comparación');
 
-    // Buscar por username O email (case-insensitive)
-    const { data, error } = await supabase
+    // Buscar por username O email - hacer dos consultas separadas para mayor compatibilidad
+    const input = usernameOrEmail.toLowerCase(); // Convertir a minúsculas para comparación
+
+    // Primero intentar por username (case-insensitive)
+    let { data, error } = await supabase
       .from('usuarios')
       .select('*')
-      .or(`username.ilike.${usernameOrEmail},email.ilike.${usernameOrEmail}`)
       .eq('password_hash', passwordHash)
-      .eq('estado', 'aprobado');
+      .eq('estado', 'aprobado')
+      .ilike('username', input);
 
-    console.log('📊 Respuesta Supabase autenticación:', { data, error });
+    console.log('📊 Búsqueda por username:', { data, error, input });
+
+    // Si no encontramos por username, intentar por email
+    if (!data || data.length === 0) {
+      ({ data, error } = await supabase
+        .from('usuarios')
+        .select('*')
+        .eq('password_hash', passwordHash)
+        .eq('estado', 'aprobado')
+        .ilike('email', input));
+
+      console.log('📊 Búsqueda por email:', { data, error, input });
+    }
 
     if (error) {
       console.error('❌ Error de Supabase en autenticación:', error);
