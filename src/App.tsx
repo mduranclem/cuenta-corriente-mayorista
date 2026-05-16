@@ -769,18 +769,18 @@ function App() {
         console.warn('⚠️ Error registrando auditoría de login:', auditError);
         // No fallar por esto
       }
-    } catch (error: any) {
-      console.error('❌ Error en login:', error);
+    } catch (err: any) {
+      console.error('❌ Error en login:', err);
 
       // Mensajes de error específicos
-      if (error.message?.includes('Usuario o contraseña incorrectos')) {
+      if (err.message?.includes('Usuario o contraseña incorrectos')) {
         error('❌ Usuario o contraseña incorrectos. Verifica tus credenciales.');
-      } else if (error.message?.includes('relation "usuarios" does not exist')) {
+      } else if (err.message?.includes('relation "usuarios" does not exist')) {
         error('❌ ERROR: La tabla usuarios no existe. Ejecuta el script SETUP_USUARIOS_SUPABASE.sql.');
-      } else if (error.message?.includes('connection')) {
+      } else if (err.message?.includes('connection')) {
         error('❌ ERROR: Problema de conexión con Supabase.');
       } else {
-        error(`❌ ERROR: ${error.message || 'Error desconocido en el login'}`);
+        error(`❌ ERROR: ${err.message || 'Error desconocido en el login'}`);
       }
     } finally {
       setLoggingIn(false);
@@ -842,18 +842,18 @@ function App() {
         console.warn('⚠️ Error registrando auditoría:', auditError);
         // No fallar por esto
       }
-    } catch (error: any) {
-      console.error('❌ Error creando administrador:', error);
+    } catch (err: any) {
+      console.error('❌ Error creando administrador:', err);
 
       // Mensajes de error más específicos
-      if (error.message?.includes('relation "usuarios" does not exist')) {
+      if (err.message?.includes('relation "usuarios" does not exist')) {
         error('❌ ERROR: La tabla usuarios no existe en Supabase. Debes ejecutar el script SETUP_USUARIOS_SUPABASE.sql primero.');
-      } else if (error.message?.includes('violates unique constraint')) {
+      } else if (err.message?.includes('violates unique constraint')) {
         error('❌ ERROR: Ya existe un usuario con ese nombre o email.');
-      } else if (error.message?.includes('connection')) {
+      } else if (err.message?.includes('connection')) {
         error('❌ ERROR: Problema de conexión con Supabase. Verifica tu configuración.');
       } else {
-        error(`❌ ERROR: ${error.message || 'Error desconocido creando administrador'}`);
+        error(`❌ ERROR: ${err.message || 'Error desconocido creando administrador'}`);
       }
     } finally {
       setCreatingAdmin(false);
@@ -882,8 +882,8 @@ function App() {
       setRegisterConfirmPassword('');
       setAuthMode('login');
       success('Registro exitoso. Tu cuenta está pendiente de aprobación por el administrador.');
-    } catch (error: any) {
-      error(error.message || 'Error en el registro');
+    } catch (err: any) {
+      error(err.message || 'Error en el registro');
     }
   };
 
@@ -893,8 +893,8 @@ function App() {
       await loadUsuariosPendientes();
       success('Usuario aprobado exitosamente');
       await registrarAccion(currentUserData.username, 'Usuario aprobado', 'cliente', userId);
-    } catch (error: any) {
-      error(error.message || 'Error aprobando usuario');
+    } catch (err: any) {
+      error(err.message || 'Error aprobando usuario');
     }
   };
 
@@ -904,8 +904,8 @@ function App() {
       await loadUsuariosPendientes();
       success('Usuario rechazado');
       await registrarAccion(currentUserData.username, 'Usuario rechazado', 'cliente', userId);
-    } catch (error: any) {
-      error(error.message || 'Error rechazando usuario');
+    } catch (err: any) {
+      error(err.message || 'Error rechazando usuario');
     }
   };
 
