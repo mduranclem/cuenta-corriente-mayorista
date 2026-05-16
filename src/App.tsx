@@ -29,6 +29,9 @@ const formatMoney = (value: number) => new Intl.NumberFormat('es-AR', { style: '
 const today = new Date().toISOString().slice(0, 10);
 const formasPago: FormaPago[] = ['Efectivo', 'Transferencia', 'Cheque', 'Tarjeta'];
 
+// Helper para campos numéricos sin mostrar 0
+const formatNumberInput = (value: number) => value === 0 ? '' : value.toString();
+
 function App() {
   const { toasts, removeToast, success, error } = useToast();
   const [page, setPage] = useState<Page>('dashboard');
@@ -165,7 +168,7 @@ function App() {
               talle: product.talle,
               color: product.color,
               precio: findProductPrice(product, invoiceClienteActual?.cat ?? 'general'),
-              query: product.nombre,
+              query: '',
             }
       )
     );
@@ -191,6 +194,7 @@ function App() {
 
   const filteredProducts = (query: string) => {
     const text = query.toLowerCase().trim();
+    if (!text) return productos; // Mostrar todos los productos si no hay búsqueda
     return productos.filter((product) =>
       [product.nombre, product.categoria, product.talle, product.color]
         .some((value) => value.toLowerCase().includes(text))
@@ -471,7 +475,7 @@ function App() {
     <div className="min-h-screen bg-surface text-textPrimary">
       <div className="lg:flex">
         <Sidebar active={page} onSelect={setPage} />
-        <main className="flex-1 px-4 py-6 pb-20 lg:px-10 lg:pb-6">
+        <main className="flex-1 px-4 py-6 lg:px-10">
           <div className="mb-8 grid gap-4 lg:grid-cols-[1fr_300px] lg:items-center">
             <div>
               <p className="text-sm uppercase tracking-[0.2em] text-textSecondary">Portal</p>
@@ -539,7 +543,7 @@ function App() {
                   </div>
                   <div className="divide-y divide-slate-200 bg-panel">
                     {rows.map((row) => {
-                      const matches = row.query ? filteredProducts(row.query) : [];
+                      const matches = filteredProducts(row.query || '');
                       return (
                         <div key={row.rowKey} className="grid grid-cols-[2fr_80px_120px_120px_80px] gap-4 px-5 py-4 items-start">
                           <div className="relative">
@@ -549,7 +553,7 @@ function App() {
                               placeholder="Buscar producto..."
                               className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm outline-none transition focus:border-accent"
                             />
-                            {row.query && matches.length > 0 && (
+                            {matches.length > 0 && (
                               <div className="absolute left-0 top-full z-20 mt-2 max-h-60 w-full overflow-auto rounded-3xl border border-border bg-panel shadow-xl">
                                 {matches.slice(0, 6).map((product) => (
                                   <button
@@ -574,14 +578,14 @@ function App() {
                             <input
                               type="number"
                               min={1}
-                              value={row.cant}
+                              value={formatNumberInput(row.cant)}
                               onChange={(event) => handleRowChange(row.rowKey, 'cant', Number(event.target.value))}
                               className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
                             />
                           </label>
                           <div>
                             <input
-                              value={row.precio}
+                              value={formatNumberInput(row.precio)}
                               onChange={(event) => handleRowChange(row.rowKey, 'precio', Number(event.target.value))}
                               type="number"
                               min={0}
@@ -1070,7 +1074,7 @@ function App() {
                         Precio general
                         <input
                           type="number"
-                          value={newProducto.precio}
+                          value={formatNumberInput(newProducto.precio)}
                           onChange={(e) => setNewProducto((prev) => ({ ...prev, precio: Number(e.target.value) }))}
                           className="w-full rounded-3xl border border-border bg-panel px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
                         />
@@ -1079,7 +1083,7 @@ function App() {
                         Precio especial
                         <input
                           type="number"
-                          value={newProducto.precioEsp}
+                          value={formatNumberInput(newProducto.precioEsp)}
                           onChange={(e) => setNewProducto((prev) => ({ ...prev, precioEsp: Number(e.target.value) }))}
                           className="w-full rounded-3xl border border-border bg-panel px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
                         />
@@ -1203,7 +1207,7 @@ function App() {
               <input
                 type="number"
                 min={0}
-                value={paymentAmount}
+                value={formatNumberInput(paymentAmount)}
                 onChange={(e) => setPaymentAmount(Number(e.target.value))}
                 className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
               />
