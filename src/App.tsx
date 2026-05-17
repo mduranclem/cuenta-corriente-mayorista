@@ -1073,7 +1073,7 @@ function App() {
   const handleAprobarUsuario = async (username: string) => {
     try {
       const usuarioPendiente = usuariosPendientes.find(u => u.username === username);
-      await aprobarUsuario(username, currentUserData.username);
+      await aprobarUsuario(username, currentUserData.id);
       await loadUsuariosPendientes();
 
       if (currentUserData && usuarioPendiente) {
@@ -1095,7 +1095,7 @@ function App() {
         return;
       }
 
-      await rechazarUsuario(username, currentUserData.username);
+      await rechazarUsuario(username, currentUserData.id);
       await loadUsuariosPendientes();
 
       if (currentUserData && usuarioPendiente) {
