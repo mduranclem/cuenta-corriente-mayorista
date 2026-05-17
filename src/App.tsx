@@ -926,17 +926,18 @@ function App() {
       } catch { /* no fallar por auditoría */ }
     } catch (err: any) {
       const msg: string = err.message || '';
+      let loginMsg = 'Ocurrió un error al iniciar sesión. Intentá de nuevo.';
       if (msg.includes('Usuario o contraseña incorrectos')) {
-        setLoginError('Usuario o contraseña incorrectos. Verificá tus datos e intentá de nuevo.');
+        loginMsg = 'Usuario o contraseña incorrectos. Verificá tus datos e intentá de nuevo.';
       } else if (msg.includes('pendiente')) {
-        setLoginError('Tu cuenta está pendiente de aprobación. Contactá al administrador.');
+        loginMsg = 'Tu cuenta está pendiente de aprobación. Contactá al administrador.';
       } else if (msg.includes('rechazado')) {
-        setLoginError('Tu cuenta fue rechazada. Contactá al administrador.');
+        loginMsg = 'Tu cuenta fue rechazada. Contactá al administrador.';
       } else if (msg.includes('connection') || msg.includes('fetch')) {
-        setLoginError('No se puede conectar con el servidor. Verificá tu conexión.');
-      } else {
-        setLoginError('Ocurrió un error al iniciar sesión. Intentá de nuevo.');
+        loginMsg = 'No se puede conectar con el servidor. Verificá tu conexión.';
       }
+      setLoginError(loginMsg);
+      error(loginMsg);
     } finally {
       setLoggingIn(false);
     }
@@ -1054,15 +1055,16 @@ function App() {
       setRegisterSuccess('Cuenta creada correctamente. Tu acceso queda pendiente de aprobación por el administrador.');
     } catch (err: any) {
       const msg: string = err.message || '';
+      let registerMsg = msg || 'Ocurrió un error al crear la cuenta. Intentá de nuevo.';
       if (msg.includes('El nombre de usuario ya existe')) {
-        setRegisterError('Ese nombre de usuario ya está en uso. Probá con otro.');
+        registerMsg = 'Ese nombre de usuario ya está en uso. Probá con otro.';
       } else if (msg.includes('duplicate key') || msg.includes('ya existe')) {
-        setRegisterError('Ese email ya tiene una cuenta. ¿Querés iniciar sesión?');
+        registerMsg = 'Ese email ya tiene una cuenta. ¿Querés iniciar sesión?';
       } else if (msg.includes('connection') || msg.includes('fetch')) {
-        setRegisterError('No se puede conectar con el servidor. Verificá tu conexión.');
-      } else {
-        setRegisterError(msg || 'Ocurrió un error al crear la cuenta. Intentá de nuevo.');
+        registerMsg = 'No se puede conectar con el servidor. Verificá tu conexión.';
       }
+      setRegisterError(registerMsg);
+      error(registerMsg);
     } finally {
       setRegistering(false);
     }
@@ -2592,7 +2594,6 @@ function App() {
             </section>
           )}
 
-          <Toast toasts={toasts} onRemove={removeToast} />
         </main>
       </div>
 
@@ -2932,6 +2933,8 @@ function App() {
       </Modal>
         </div>
       )}
+
+      <Toast toasts={toasts} onRemove={removeToast} />
     </>
   );
 }
