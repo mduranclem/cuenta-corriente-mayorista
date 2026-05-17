@@ -208,6 +208,9 @@ function App() {
   const [creatingAdmin, setCreatingAdmin] = useState(false);
   const [loggingIn, setLoggingIn] = useState(false);
   const [registering, setRegistering] = useState(false);
+  const [loginError, setLoginError] = useState('');
+  const [registerError, setRegisterError] = useState('');
+  const [registerSuccess, setRegisterSuccess] = useState('');
   const [auditData, setAuditData] = useState<any[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditFilterUsuario, setAuditFilterUsuario] = useState('');
@@ -900,68 +903,39 @@ function App() {
 
   // Funciones de autenticación
   const handleLogin = async () => {
-    console.log('🔐 Iniciando proceso de login...');
+    if (loggingIn) return;
+    setLoginError('');
 
-    // Evitar múltiples clicks
-    if (loggingIn) {
-      console.log('⚠️ Ya se está procesando un login...');
+    if (!loginUsername.trim() || !loginPassword.trim()) {
+      setLoginError('Completá todos los campos');
       return;
     }
 
     setLoggingIn(true);
-
     try {
-      // Validaciones detalladas
-      if (!loginUsername.trim()) {
-        error('❌ ERROR DE LOGIN: El usuario o email es obligatorio. Por favor ingresa tu información.');
-        return;
-      }
-      if (!loginPassword.trim()) {
-        error('❌ ERROR DE LOGIN: La contraseña es obligatoria. Por favor ingresa tu contraseña.');
-        return;
-      }
-      if (loginPassword.length < 6) {
-        error('❌ ERROR DE LOGIN: La contraseña debe tener al menos 6 caracteres. Verifica tu contraseña.');
-        return;
-      }
-
-      console.log('✅ Validaciones de login pasadas, autenticando:', {
-        username: loginUsername,
-        passwordLength: loginPassword.length
-      });
-
       const userData = await autenticarUsuario(loginUsername, loginPassword);
-      console.log('✅ Usuario autenticado exitosamente:', userData);
-
       setCurrentUser(userData.username);
       setCurrentUserData(userData);
       localStorage.setItem('currentUser', JSON.stringify(userData));
       setPage('inicio');
       setLoginUsername('');
       setLoginPassword('');
-      success(`✅ ¡BIENVENIDO ${userData.username.toUpperCase()}! Has iniciado sesión correctamente.`);
-
+      setLoginError('');
       try {
         await logAudit(userData.username, 'INICIO_SESION', 'cliente', userData.id, null, { username: userData.username, rol: userData.rol, email: userData.email });
-      } catch (auditError) {
-        console.warn('⚠️ Error registrando auditoría de login:', auditError);
-      }
+      } catch { /* no fallar por auditoría */ }
     } catch (err: any) {
-      console.error('❌ Error en login:', err);
-
-      // Mensajes de error muy específicos
-      if (err.message?.includes('Usuario o contraseña incorrectos')) {
-        error(`❌ CREDENCIALES INCORRECTAS: El usuario "${loginUsername}" o la contraseña no coinciden. Verifica:\n• Usuario correcto (mayús/minús)\n• Contraseña correcta\n• Tu cuenta está aprobada`);
-      } else if (err.message?.includes('relation "usuarios" does not exist')) {
-        error('❌ ERROR DE BASE DE DATOS: La tabla de usuarios no existe. Contacta al administrador técnico para configurar la base de datos.');
-      } else if (err.message?.includes('connection') || err.message?.includes('fetch')) {
-        error('❌ ERROR DE CONEXIÓN: No se puede conectar con la base de datos. Verifica tu conexión a internet y vuelve a intentar.');
-      } else if (err.message?.includes('pendiente')) {
-        error('❌ CUENTA PENDIENTE: Tu cuenta está esperando aprobación del administrador. Contacta al admin para que apruebe tu cuenta.');
-      } else if (err.message?.includes('rechazado')) {
-        error('❌ CUENTA RECHAZADA: Tu cuenta fue rechazada por el administrador. Contacta al admin para más información.');
+      const msg: string = err.message || '';
+      if (msg.includes('Usuario o contraseña incorrectos')) {
+        setLoginError('Usuario o contraseña incorrectos. Verificá tus datos e intentá de nuevo.');
+      } else if (msg.includes('pendiente')) {
+        setLoginError('Tu cuenta está pendiente de aprobación. Contactá al administrador.');
+      } else if (msg.includes('rechazado')) {
+        setLoginError('Tu cuenta fue rechazada. Contactá al administrador.');
+      } else if (msg.includes('connection') || msg.includes('fetch')) {
+        setLoginError('No se puede conectar con el servidor. Verificá tu conexión.');
       } else {
-        error(`❌ ERROR DE LOGIN: ${err.message || 'Error desconocido durante el inicio de sesión. Contacta al administrador si el problema persiste.'}`);
+        setLoginError('Ocurrió un error al iniciar sesión. Intentá de nuevo.');
       }
     } finally {
       setLoggingIn(false);
@@ -1041,89 +1015,53 @@ function App() {
   };
 
   const handleRegister = async () => {
-    console.log('🔄 Iniciando proceso de registro...');
+    if (registering) return;
+    setRegisterError('');
+    setRegisterSuccess('');
 
-    // Evitar múltiples clicks
-    if (registering) {
-      console.log('⚠️ Ya se está procesando un registro...');
+    if (!registerUsername.trim() || !registerEmail.trim() || !registerPassword.trim() || !registerConfirmPassword.trim()) {
+      setRegisterError('Completá todos los campos');
+      return;
+    }
+    if (registerUsername.trim().length < 3) {
+      setRegisterError('El nombre de usuario debe tener al menos 3 caracteres');
+      return;
+    }
+    if (!registerEmail.includes('@') || !registerEmail.includes('.')) {
+      setRegisterError('Ingresá un email válido (ejemplo@dominio.com)');
+      return;
+    }
+    if (registerPassword.length < 6) {
+      setRegisterError('La contraseña debe tener al menos 6 caracteres');
+      return;
+    }
+    if (registerPassword !== registerConfirmPassword) {
+      setRegisterError('Las contraseñas no coinciden');
       return;
     }
 
     setRegistering(true);
-
     try {
-      // Validaciones detalladas
-      if (!registerUsername.trim()) {
-        error('❌ ERROR: El nombre de usuario es obligatorio');
-        return;
-      }
-      if (!registerEmail.trim()) {
-        error('❌ ERROR: El email es obligatorio');
-        return;
-      }
-      if (!registerPassword.trim()) {
-        error('❌ ERROR: La contraseña es obligatoria');
-        return;
-      }
-      if (!registerConfirmPassword.trim()) {
-        error('❌ ERROR: Debes confirmar la contraseña');
-        return;
-      }
-      if (registerPassword !== registerConfirmPassword) {
-        error('❌ ERROR: Las contraseñas no coinciden');
-        return;
-      }
-      if (registerPassword.length < 6) {
-        error('❌ ERROR: La contraseña debe tener al menos 6 caracteres');
-        return;
-      }
-      if (!registerEmail.includes('@') || !registerEmail.includes('.')) {
-        error('❌ ERROR: Ingresa un email válido (ejemplo@dominio.com)');
-        return;
-      }
-      if (registerUsername.length < 3) {
-        error('❌ ERROR: El nombre de usuario debe tener al menos 3 caracteres');
-        return;
-      }
-
-      console.log('✅ Todas las validaciones pasadas, registrando usuario:', {
-        username: registerUsername,
-        email: registerEmail,
-        passwordLength: registerPassword.length
-      });
-
       await registrarUsuario(registerUsername, registerEmail, registerPassword);
-
-      console.log('✅ Registro completado exitosamente');
-
       try {
         await logAudit(registerUsername, 'USUARIO_REGISTRADO', 'cliente', undefined, null, { username: registerUsername, email: registerEmail, estado: 'pendiente' });
-      } catch (auditError) {
-        console.warn('⚠️ Error registrando auditoría de registro:', auditError);
-      }
+      } catch { /* no fallar por auditoría */ }
 
-      // Limpiar formulario
       setRegisterUsername('');
       setRegisterEmail('');
       setRegisterPassword('');
       setRegisterConfirmPassword('');
-      setAuthMode('login');
-
-      success('✅ ¡REGISTRO EXITOSO! Tu cuenta está pendiente de aprobación por el administrador. Serás notificado cuando sea aprobada.');
+      setRegisterSuccess('Cuenta creada correctamente. Tu acceso queda pendiente de aprobación por el administrador.');
     } catch (err: any) {
-      console.error('❌ Error en registro:', err);
-
-      // Mensajes de error específicos
-      if (err.message?.includes('El nombre de usuario ya existe')) {
-        error('❌ ERROR: Este nombre de usuario ya está en uso. Prueba con otro.');
-      } else if (err.message?.includes('duplicate key')) {
-        error('❌ ERROR: El email o usuario ya están registrados.');
-      } else if (err.message?.includes('relation "usuarios" does not exist')) {
-        error('❌ ERROR: La tabla usuarios no existe. Contacta al administrador.');
-      } else if (err.message?.includes('connection')) {
-        error('❌ ERROR: Problema de conexión. Verifica tu internet.');
+      const msg: string = err.message || '';
+      if (msg.includes('El nombre de usuario ya existe')) {
+        setRegisterError('Ese nombre de usuario ya está en uso. Probá con otro.');
+      } else if (msg.includes('duplicate key') || msg.includes('ya existe')) {
+        setRegisterError('Ese email ya tiene una cuenta. ¿Querés iniciar sesión?');
+      } else if (msg.includes('connection') || msg.includes('fetch')) {
+        setRegisterError('No se puede conectar con el servidor. Verificá tu conexión.');
       } else {
-        error(`❌ ERROR DE REGISTRO: ${err.message || 'Error desconocido en el registro. Intenta nuevamente.'}`);
+        setRegisterError(msg || 'Ocurrió un error al crear la cuenta. Intentá de nuevo.');
       }
     } finally {
       setRegistering(false);
@@ -1318,9 +1256,11 @@ function App() {
                     <input
                       type="text"
                       value={loginUsername}
-                      onChange={(e) => setLoginUsername(e.target.value)}
-                      className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
-                      placeholder="Usuario o email (mayús/minús)"
+                      onChange={(e) => { setLoginUsername(e.target.value); setLoginError(''); }}
+                      onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                      className={`w-full rounded-3xl border px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent bg-surface ${loginError ? 'border-red-500' : 'border-border'}`}
+                      placeholder="Usuario o email"
+                      autoComplete="username"
                     />
                   </label>
 
@@ -1329,33 +1269,38 @@ function App() {
                     <input
                       type="password"
                       value={loginPassword}
-                      onChange={(e) => setLoginPassword(e.target.value)}
+                      onChange={(e) => { setLoginPassword(e.target.value); setLoginError(''); }}
                       onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                      className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
-                      placeholder="Ingresa tu contraseña"
+                      className={`w-full rounded-3xl border px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent bg-surface ${loginError ? 'border-red-500' : 'border-border'}`}
+                      placeholder="Contraseña"
+                      autoComplete="current-password"
                     />
                   </label>
+
+                  {loginError && (
+                    <div className="rounded-2xl bg-red-900/30 border border-red-600/40 px-4 py-3 text-sm text-red-300">
+                      {loginError}
+                    </div>
+                  )}
 
                   <button
                     type="button"
                     onClick={handleLogin}
                     disabled={loggingIn}
                     className={`w-full rounded-3xl px-4 py-3 text-sm font-semibold text-white transition ${
-                      loggingIn
-                        ? 'bg-gray-500 cursor-not-allowed'
-                        : 'bg-accent hover:bg-indigo-600'
+                      loggingIn ? 'bg-gray-500 cursor-not-allowed' : 'bg-accent hover:bg-indigo-600'
                     }`}
                   >
-                    {loggingIn ? '⏳ Iniciando sesión...' : 'Iniciar sesión'}
+                    {loggingIn ? 'Verificando...' : 'Iniciar sesión'}
                   </button>
 
                   <div className="text-center">
                     <button
                       type="button"
-                      onClick={() => setAuthMode('register')}
+                      onClick={() => { setAuthMode('register'); setLoginError(''); }}
                       className="text-sm text-accent hover:text-indigo-400 transition"
                     >
-                      ¿No tienes cuenta? Regístrate
+                      ¿No tenés cuenta? Registrate
                     </button>
                   </div>
                 </div>
@@ -1364,7 +1309,7 @@ function App() {
               {authMode === 'register' && !needsFirstAdmin && (
                 <div className="space-y-4">
                   <div className="rounded-3xl bg-yellow-900/20 border border-yellow-600/30 p-4">
-                    <h3 className="font-semibold text-yellow-300 mb-2">📝 Registro de usuario</h3>
+                    <h3 className="font-semibold text-yellow-300 mb-2">Registro de usuario</h3>
                     <p className="text-sm text-yellow-200">Tu cuenta quedará pendiente de aprobación</p>
                   </div>
 
@@ -1373,8 +1318,8 @@ function App() {
                     <input
                       type="text"
                       value={registerUsername}
-                      onChange={(e) => setRegisterUsername(e.target.value)}
-                      className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                      onChange={(e) => { setRegisterUsername(e.target.value); setRegisterError(''); setRegisterSuccess(''); }}
+                      className={`w-full rounded-3xl border px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent bg-surface ${registerError ? 'border-red-500' : 'border-border'}`}
                       placeholder="usuario123"
                     />
                   </label>
@@ -1384,8 +1329,8 @@ function App() {
                     <input
                       type="email"
                       value={registerEmail}
-                      onChange={(e) => setRegisterEmail(e.target.value)}
-                      className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                      onChange={(e) => { setRegisterEmail(e.target.value); setRegisterError(''); setRegisterSuccess(''); }}
+                      className={`w-full rounded-3xl border px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent bg-surface ${registerError ? 'border-red-500' : 'border-border'}`}
                       placeholder="usuario@email.com"
                     />
                   </label>
@@ -1395,8 +1340,8 @@ function App() {
                     <input
                       type="password"
                       value={registerPassword}
-                      onChange={(e) => setRegisterPassword(e.target.value)}
-                      className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                      onChange={(e) => { setRegisterPassword(e.target.value); setRegisterError(''); setRegisterSuccess(''); }}
+                      className={`w-full rounded-3xl border px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent bg-surface ${registerError ? 'border-red-500' : 'border-border'}`}
                       placeholder="Mínimo 6 caracteres"
                     />
                   </label>
@@ -1406,19 +1351,28 @@ function App() {
                     <input
                       type="password"
                       value={registerConfirmPassword}
-                      onChange={(e) => setRegisterConfirmPassword(e.target.value)}
+                      onChange={(e) => { setRegisterConfirmPassword(e.target.value); setRegisterError(''); setRegisterSuccess(''); }}
                       onKeyDown={(e) => e.key === 'Enter' && handleRegister()}
-                      className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                      className={`w-full rounded-3xl border px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent bg-surface ${registerError ? 'border-red-500' : 'border-border'}`}
                       placeholder="Repetir contraseña"
                     />
                   </label>
 
+                  {registerError && (
+                    <div className="rounded-2xl bg-red-900/30 border border-red-600/40 px-4 py-3 text-sm text-red-300">
+                      {registerError}
+                    </div>
+                  )}
+
+                  {registerSuccess && (
+                    <div className="rounded-2xl bg-green-900/30 border border-green-600/40 px-4 py-3 text-sm text-green-300">
+                      {registerSuccess}
+                    </div>
+                  )}
+
                   <button
                     type="button"
-                    onClick={() => {
-                      console.log('🔘 Botón registrarse clickeado');
-                      handleRegister();
-                    }}
+                    onClick={handleRegister}
                     disabled={registering}
                     className={`w-full rounded-3xl px-4 py-3 text-sm font-semibold text-white transition ${
                       registering
@@ -1426,16 +1380,16 @@ function App() {
                         : 'bg-accent hover:bg-indigo-600'
                     }`}
                   >
-                    {registering ? '⏳ Registrando usuario...' : 'Registrarse'}
+                    {registering ? 'Creando cuenta...' : 'Registrarse'}
                   </button>
 
                   <div className="text-center">
                     <button
                       type="button"
-                      onClick={() => setAuthMode('login')}
+                      onClick={() => { setAuthMode('login'); setRegisterError(''); setRegisterSuccess(''); }}
                       className="text-sm text-accent hover:text-indigo-400 transition"
                     >
-                      ¿Ya tienes cuenta? Inicia sesión
+                      ¿Ya tenés cuenta? Iniciá sesión
                     </button>
                   </div>
                 </div>
