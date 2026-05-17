@@ -30,7 +30,7 @@ import {
   rechazarUsuario,
 } from './lib/storage';
 
-type Page = 'dashboard' | 'clientes' | 'cuenta' | 'historial' | 'nuevo-cliente' | 'productos' | 'backup' | 'login' | 'admin' | 'listas-precios';
+type Page = 'inicio' | 'dashboard' | 'clientes' | 'cuenta' | 'historial' | 'nuevo-cliente' | 'productos' | 'backup' | 'login' | 'admin' | 'listas-precios';
 
 interface RowFactura extends FacturaItem {
   query: string;
@@ -145,7 +145,7 @@ const printInvoice = (factura: Factura, cliente: Cliente) => {
 
 function App() {
   const { toasts, removeToast, success, error } = useToast();
-  const [page, setPage] = useState<Page>('dashboard');
+  const [page, setPage] = useState<Page>('inicio');
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [facturas, setFacturas] = useState<Factura[]>([]);
@@ -159,6 +159,7 @@ function App() {
   const [productFilter, setProductFilter] = useState('');
   const [productEdit, setProductEdit] = useState<Producto | null>(null);
   const [productSearch, setProductSearch] = useState('');
+  const [productModalOpen, setProductModalOpen] = useState(false);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentClienteId, setPaymentClienteId] = useState('');
   const [paymentDate, setPaymentDate] = useState(today);
@@ -242,7 +243,7 @@ function App() {
         const userData = JSON.parse(savedUser);
         setCurrentUser(userData.username);
         setCurrentUserData(userData);
-        setPage('dashboard');
+        setPage('inicio');
       } catch (error) {
         localStorage.removeItem('currentUser');
         setPage('login');
@@ -351,6 +352,19 @@ function App() {
     () => [...facturas].sort((a, b) => b.fecha.localeCompare(a.fecha)),
     [facturas]
   );
+
+  const resumen = useMemo(() => {
+    const saldosPorCliente = clientes.map((c) => {
+      const totalF = facturas.filter(f => f.clienteId === c.id).reduce((s, f) => s + f.total, 0);
+      const totalP = pagos.filter(p => p.clienteId === c.id).reduce((s, p) => s + p.monto, 0);
+      return { cliente: c, saldo: totalF - totalP };
+    });
+    const deudaTotal = saldosPorCliente.reduce((s, x) => s + Math.max(0, x.saldo), 0);
+    const clientesConDeuda = saldosPorCliente.filter(x => x.saldo > 0).length;
+    const ultimas5Facturas = orderedFacturas.slice(0, 5);
+    const ultimos3Pagos = [...pagos].sort((a, b) => b.fecha.localeCompare(a.fecha)).slice(0, 3);
+    return { deudaTotal, clientesConDeuda, ultimas5Facturas, ultimos3Pagos };
+  }, [clientes, facturas, pagos, orderedFacturas]);
 
   const todasLasListas = useMemo(
     () => [...LISTAS_BUILTIN, ...listasPrecios],
@@ -910,8 +924,8 @@ ${productosDetalle}
         success(`✅ PRODUCTO AGREGADO: ${trimmed.nombre} se agregó correctamente al inventario`);
       }
 
-      // Limpiar formulario
       setNewProducto({ nombre: '', categoria: '', talle: '', color: '', precio: 0, precioEsp: 0 });
+      setProductModalOpen(false);
     } catch (err: any) {
       console.error('❌ Error manejando producto:', err);
       error(`❌ ERROR: No se pudo ${productEdit ? 'actualizar' : 'agregar'} el producto. ${err.message || 'Intenta nuevamente.'}`);
@@ -920,6 +934,7 @@ ${productosDetalle}
 
   const handleProductEdit = (item: Producto) => {
     setProductEdit(item);
+    setProductModalOpen(true);
     setNewProducto({
       nombre: item.nombre,
       categoria: item.categoria,
@@ -928,7 +943,6 @@ ${productosDetalle}
       precio: item.precio,
       precioEsp: item.precioEsp ?? 0,
     });
-    setPage('productos');
   };
 
   const handleProductDelete = async (id: string) => {
@@ -1066,7 +1080,7 @@ ${productosDetalle}
       setCurrentUser(userData.username);
       setCurrentUserData(userData);
       localStorage.setItem('currentUser', JSON.stringify(userData));
-      setPage('dashboard');
+      setPage('inicio');
       setLoginUsername('');
       setLoginPassword('');
       success(`✅ ¡BIENVENIDO ${userData.username.toUpperCase()}! Has iniciado sesión correctamente.`);
@@ -1162,7 +1176,7 @@ ${productosDetalle}
       setCurrentUserData(userData);
       localStorage.setItem('currentUser', JSON.stringify(userData));
       setNeedsFirstAdmin(false);
-      setPage('dashboard');
+      setPage('inicio');
       setRegisterUsername('');
       setRegisterEmail('');
       setRegisterPassword('');
@@ -1757,6 +1771,82 @@ ${productosDetalle}
                 </div>
               </div>
 
+          {page === 'inicio' && (
+            <section className="space-y-6">
+              <div>
+                <h2 className="text-3xl font-bold text-textPrimary">Resumen general</h2>
+                <p className="mt-1 text-sm text-textSecondary">Vista rápida del estado del negocio.</p>
+              </div>
+
+              {/* Cards de métricas */}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="rounded-3xl bg-panel p-6 shadow-panel">
+                  <p className="text-sm text-textSecondary">Deuda total acumulada</p>
+                  <p className="mt-3 text-4xl font-bold text-red-400">{formatMoney(resumen.deudaTotal)}</p>
+                  <p className="mt-2 text-xs text-textSecondary">Suma de saldos pendientes de todos los clientes</p>
+                </div>
+                <div className="rounded-3xl bg-panel p-6 shadow-panel">
+                  <p className="text-sm text-textSecondary">Clientes con deuda</p>
+                  <p className="mt-3 text-4xl font-bold text-amber-400">{resumen.clientesConDeuda}</p>
+                  <p className="mt-2 text-xs text-textSecondary">de {clientes.length} clientes en total</p>
+                </div>
+              </div>
+
+              <div className="grid gap-6 lg:grid-cols-2">
+                {/* Últimas 5 facturas */}
+                <div className="rounded-3xl bg-panel p-6 shadow-panel">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold">Últimas facturas</h3>
+                    <button type="button" onClick={() => setPage('historial')} className="text-xs text-accent hover:underline">Ver todas</button>
+                  </div>
+                  {resumen.ultimas5Facturas.length === 0 ? (
+                    <p className="text-sm text-textSecondary">No hay facturas registradas.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {resumen.ultimas5Facturas.map((f) => {
+                        const cli = clientes.find(c => c.id === f.clienteId);
+                        return (
+                          <div key={f.id} className="flex items-center justify-between rounded-2xl bg-surface px-4 py-3">
+                            <div>
+                              <p className="text-sm font-medium text-textPrimary">{cli?.nombre ?? 'Cliente eliminado'}</p>
+                              <p className="text-xs text-textSecondary">{f.fecha} · {f.items.length} ítem{f.items.length !== 1 ? 's' : ''}</p>
+                            </div>
+                            <span className="text-sm font-semibold text-accent">{formatMoney(f.total)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Últimos 3 pagos */}
+                <div className="rounded-3xl bg-panel p-6 shadow-panel">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold">Últimos pagos</h3>
+                  </div>
+                  {resumen.ultimos3Pagos.length === 0 ? (
+                    <p className="text-sm text-textSecondary">No hay pagos registrados.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {resumen.ultimos3Pagos.map((p) => {
+                        const cli = clientes.find(c => c.id === p.clienteId);
+                        return (
+                          <div key={p.id} className="flex items-center justify-between rounded-2xl bg-surface px-4 py-3">
+                            <div>
+                              <p className="text-sm font-medium text-textPrimary">{cli?.nombre ?? 'Cliente eliminado'}</p>
+                              <p className="text-xs text-textSecondary">{p.fecha} · {p.forma}</p>
+                            </div>
+                            <span className="text-sm font-semibold text-green-400">{formatMoney(p.monto)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </section>
+          )}
+
           {page === 'dashboard' && (
             <section className="space-y-6 overflow-visible">
               <div className="rounded-3xl bg-panel p-6 shadow-panel overflow-visible">
@@ -2013,16 +2103,16 @@ ${productosDetalle}
                       {clienteList.map((cliente) => {
                         const clienteFacturas = facturas.filter((factura) => factura.clienteId === cliente.id);
                         const clientePagos = pagos.filter((p) => p.clienteId === cliente.id);
-                        const total = clienteFacturas.reduce((sum, factura) => sum + factura.total, 0) - clientePagos.reduce((sum, pago) => sum + pago.monto, 0);
-                        const lastPago = clientePagos.map((p) => p.fecha).sort().reverse()[0] || '—';
+                        const clienteTotalF = clienteFacturas.reduce((sum, f) => sum + f.total, 0);
+                        const clienteTotalP = clientePagos.reduce((sum, p) => sum + p.monto, 0);
+                        const total = clienteTotalF - clienteTotalP;
+                        const sinActividad = clienteFacturas.length === 0 && clientePagos.length === 0;
+                        const lastPago = clientePagos.map((p) => p.fecha).sort().reverse()[0];
                         return (
                           <tr key={cliente.id} className="border-t border-border hover:bg-surface">
                             <td
                               className="cursor-pointer px-3 py-4 sm:px-5"
-                              onClick={() => {
-                                setSelectedClientId(cliente.id);
-                                setPage('cuenta');
-                              }}
+                              onClick={() => { setSelectedClientId(cliente.id); setPage('cuenta'); }}
                             >
                               <div className="font-medium">{cliente.nombre}</div>
                               <div className="mt-1 text-xs text-textSecondary">{cliente.email}</div>
@@ -2032,8 +2122,12 @@ ${productosDetalle}
                             </td>
                             <td className="px-3 py-4 text-textSecondary sm:px-5 hidden sm:table-cell">{getListaById(cliente.cat).nombre}</td>
                             <td className="px-3 py-4 text-textSecondary sm:px-5 hidden md:table-cell">{cliente.tel}</td>
-                            <td className="px-3 py-4 font-semibold sm:px-5">{formatMoney(total)}</td>
-                            <td className="px-3 py-4 text-textSecondary sm:px-5 hidden lg:table-cell">{lastPago}</td>
+                            <td className={`px-3 py-4 sm:px-5 font-semibold ${sinActividad || total === 0 ? 'text-textSecondary' : total > 0 ? 'text-amber-400' : 'text-green-400'}`}>
+                              {formatMoney(total)}
+                            </td>
+                            <td className="px-3 py-4 text-textSecondary sm:px-5 hidden lg:table-cell">
+                              {lastPago ?? <span className="text-textSecondary/50 italic">Sin actividad</span>}
+                            </td>
                             <td className="px-3 py-4 sm:px-5">
                               <div className="flex gap-2">
                                 <button
@@ -2287,15 +2381,6 @@ ${productosDetalle}
                       ))}
                     </select>
                   </label>
-                  <label className="lg:col-span-2 space-y-2 text-sm text-textSecondary">
-                    Notas
-                    <textarea
-                      value={newClientNotas}
-                      onChange={(e) => setNewClientNotas(e.target.value)}
-                      rows={4}
-                      className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
-                    />
-                  </label>
                 </div>
                 <div className="mt-6 flex justify-end gap-3">
                   {editingClient && (
@@ -2335,47 +2420,39 @@ ${productosDetalle}
                     <h3 className="text-2xl font-semibold">Productos</h3>
                     <p className="mt-1 text-sm text-textSecondary">Administra prendas, talles y precios con filtros claros.</p>
                   </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="flex gap-3">
                     <input
                       value={productFilter}
                       onChange={(e) => setProductFilter(e.target.value)}
-                      placeholder="Buscar producto"
-                      className="rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                      placeholder="Buscar producto..."
+                      className="flex-1 rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
                     />
                     <button
                       type="button"
                       onClick={() => {
                         setProductEdit(null);
                         setNewProducto({ nombre: '', categoria: '', talle: '', color: '', precio: 0, precioEsp: 0 });
-                        success('Formulario listo para nuevo producto');
-                        // Hacer scroll al formulario
-                        setTimeout(() => {
-                          const formulario = document.getElementById('formulario-producto');
-                          if (formulario) {
-                            formulario.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                          }
-                        }, 100);
+                        setProductModalOpen(true);
                       }}
-                      className="rounded-3xl bg-accent px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-600"
+                      className="rounded-3xl bg-accent px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-600 whitespace-nowrap"
                     >
-                      Nuevo producto
+                      + Nuevo producto
                     </button>
                   </div>
                 </div>
-                <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_420px]">
-                  <div className="overflow-hidden rounded-3xl border border-border">
-                    <div className="overflow-x-auto">
-                      <table className="w-full border-collapse text-sm min-w-[600px]">
-                        <thead className="bg-surface text-textSecondary">
-                          <tr>
-                            <th className="px-3 py-4 text-left sm:px-5">Nombre</th>
-                            <th className="px-3 py-4 text-left sm:px-5 hidden sm:table-cell">Categoría</th>
-                            <th className="px-3 py-4 text-left sm:px-5 hidden md:table-cell">Talle</th>
-                            <th className="px-3 py-4 text-left sm:px-5 hidden md:table-cell">Color</th>
-                            <th className="px-3 py-4 text-left sm:px-5">Precios</th>
-                            <th className="px-3 py-4 sm:px-5"></th>
-                          </tr>
-                        </thead>
+                <div className="mt-6 overflow-hidden rounded-3xl border border-border">
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse text-sm min-w-[600px]">
+                      <thead className="bg-surface text-textSecondary">
+                        <tr>
+                          <th className="px-3 py-4 text-left sm:px-5">Nombre</th>
+                          <th className="px-3 py-4 text-left sm:px-5 hidden sm:table-cell">Categoría</th>
+                          <th className="px-3 py-4 text-left sm:px-5 hidden md:table-cell">Talle</th>
+                          <th className="px-3 py-4 text-left sm:px-5 hidden md:table-cell">Color</th>
+                          <th className="px-3 py-4 text-left sm:px-5">Precios</th>
+                          <th className="px-3 py-4 sm:px-5"></th>
+                        </tr>
+                      </thead>
                       <tbody>
                         {productList.map((item) => (
                           <tr key={item.id} className="border-t border-border hover:bg-surface">
@@ -2392,18 +2469,12 @@ ${productosDetalle}
                               {formatMoney(item.precio)}{item.precioEsp ? ` / ${formatMoney(item.precioEsp)}` : ''}
                             </td>
                             <td className="px-3 py-4 text-right sm:px-5">
-                              <button
-                                type="button"
-                                onClick={() => handleProductEdit(item)}
-                                className="mr-2 rounded-3xl bg-surface px-3 py-2 text-xs text-textPrimary transition hover:bg-border"
-                              >
+                              <button type="button" onClick={() => handleProductEdit(item)}
+                                className="mr-2 rounded-3xl bg-surface px-3 py-2 text-xs text-textPrimary transition hover:bg-border">
                                 Editar
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => handleProductDelete(item.id)}
-                                className="rounded-3xl bg-red-900 px-3 py-2 text-xs text-red-600 transition hover:bg-red-900"
-                              >
+                              <button type="button" onClick={() => handleProductDelete(item.id)}
+                                className="rounded-3xl bg-red-900/40 px-3 py-2 text-xs text-red-400 transition hover:bg-red-900">
                                 Borrar
                               </button>
                             </td>
@@ -2411,85 +2482,6 @@ ${productosDetalle}
                         ))}
                       </tbody>
                     </table>
-                    </div>
-                  </div>
-                  <div id="formulario-producto" className="rounded-3xl border border-border bg-surface p-6">
-                    <h4 className="text-xl font-semibold">{productEdit ? 'Editar producto' : 'Agregar producto'}</h4>
-                    <div className="mt-6 space-y-4">
-                      <label className="space-y-2 text-sm text-textSecondary">
-                        Nombre
-                        <input
-                          value={newProducto.nombre}
-                          onChange={(e) => setNewProducto((prev) => ({ ...prev, nombre: e.target.value }))}
-                          className="w-full rounded-3xl border border-border bg-panel px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
-                        />
-                      </label>
-                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                        <label className="space-y-2 text-sm text-textSecondary">
-                          Categoría
-                          <input
-                            value={newProducto.categoria}
-                            onChange={(e) => setNewProducto((prev) => ({ ...prev, categoria: e.target.value }))}
-                            className="w-full rounded-3xl border border-border bg-panel px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
-                          />
-                        </label>
-                        <label className="space-y-2 text-sm text-textSecondary">
-                          Talle
-                          <input
-                            value={newProducto.talle}
-                            onChange={(e) => setNewProducto((prev) => ({ ...prev, talle: e.target.value }))}
-                            className="w-full rounded-3xl border border-border bg-panel px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
-                          />
-                        </label>
-                      </div>
-                      <label className="space-y-2 text-sm text-textSecondary">
-                        Color
-                        <input
-                          value={newProducto.color}
-                          onChange={(e) => setNewProducto((prev) => ({ ...prev, color: e.target.value }))}
-                          className="w-full rounded-3xl border border-border bg-panel px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
-                        />
-                      </label>
-                      <label className="space-y-2 text-sm text-textSecondary">
-                        Precio general
-                        <input
-                          type="number"
-                          value={formatNumberInput(newProducto.precio)}
-                          onChange={(e) => setNewProducto((prev) => ({ ...prev, precio: Number(e.target.value) }))}
-                          className="w-full rounded-3xl border border-border bg-panel px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
-                        />
-                      </label>
-                      <label className="space-y-2 text-sm text-textSecondary">
-                        Precio especial
-                        <input
-                          type="number"
-                          value={formatNumberInput(newProducto.precioEsp)}
-                          onChange={(e) => setNewProducto((prev) => ({ ...prev, precioEsp: Number(e.target.value) }))}
-                          className="w-full rounded-3xl border border-border bg-panel px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
-                        />
-                      </label>
-                    </div>
-                    <div className="mt-6 flex justify-end gap-3">
-                      {productEdit && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setProductEdit(null);
-                            setNewProducto({ nombre: '', categoria: '', talle: '', color: '', precio: 0, precioEsp: 0 });
-                          }}
-                          className="rounded-3xl bg-panel px-5 py-3 text-sm font-semibold text-textPrimary shadow-sm ring-1 ring-border transition hover:bg-surface"
-                        >
-                          Cancelar
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={handleProductSave}
-                        className="rounded-3xl bg-accent px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-600"
-                      >
-                        Guardar producto
-                      </button>
-                    </div>
                   </div>
                 </div>
               </div>
@@ -2720,6 +2712,60 @@ ${productosDetalle}
           <Toast toasts={toasts} onRemove={removeToast} />
         </main>
       </div>
+
+      {/* Modal de producto */}
+      <Modal
+        title={productEdit ? 'Editar producto' : 'Nuevo producto'}
+        open={productModalOpen}
+        onClose={() => { setProductModalOpen(false); setProductEdit(null); setNewProducto({ nombre: '', categoria: '', talle: '', color: '', precio: 0, precioEsp: 0 }); }}
+      >
+        <div className="space-y-4">
+          <label className="space-y-2 text-sm text-textSecondary">
+            Nombre
+            <input value={newProducto.nombre} onChange={(e) => setNewProducto((p) => ({ ...p, nombre: e.target.value }))}
+              className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent" />
+          </label>
+          <div className="grid grid-cols-2 gap-4">
+            <label className="space-y-2 text-sm text-textSecondary">
+              Categoría
+              <input value={newProducto.categoria} onChange={(e) => setNewProducto((p) => ({ ...p, categoria: e.target.value }))}
+                className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent" />
+            </label>
+            <label className="space-y-2 text-sm text-textSecondary">
+              Talle
+              <input value={newProducto.talle} onChange={(e) => setNewProducto((p) => ({ ...p, talle: e.target.value }))}
+                className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent" />
+            </label>
+          </div>
+          <label className="space-y-2 text-sm text-textSecondary">
+            Color
+            <input value={newProducto.color} onChange={(e) => setNewProducto((p) => ({ ...p, color: e.target.value }))}
+              className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent" />
+          </label>
+          <div className="grid grid-cols-2 gap-4">
+            <label className="space-y-2 text-sm text-textSecondary">
+              Precio general
+              <input type="number" value={formatNumberInput(newProducto.precio)} onChange={(e) => setNewProducto((p) => ({ ...p, precio: Number(e.target.value) }))}
+                className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent" />
+            </label>
+            <label className="space-y-2 text-sm text-textSecondary">
+              Precio especial
+              <input type="number" value={formatNumberInput(newProducto.precioEsp)} onChange={(e) => setNewProducto((p) => ({ ...p, precioEsp: Number(e.target.value) }))}
+                className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent" />
+            </label>
+          </div>
+          <div className="flex justify-end gap-3 pt-2">
+            <button type="button" onClick={() => { setProductModalOpen(false); setProductEdit(null); setNewProducto({ nombre: '', categoria: '', talle: '', color: '', precio: 0, precioEsp: 0 }); }}
+              className="rounded-3xl bg-panel px-5 py-3 text-sm font-semibold text-textPrimary ring-1 ring-border hover:bg-surface">
+              Cancelar
+            </button>
+            <button type="button" onClick={handleProductSave}
+              className="rounded-3xl bg-accent px-5 py-3 text-sm font-semibold text-white hover:bg-indigo-600">
+              {productEdit ? 'Actualizar' : 'Guardar producto'}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal title="Registrar pago" open={paymentModalOpen} onClose={() => setPaymentModalOpen(false)}>
         <div className="space-y-4">
