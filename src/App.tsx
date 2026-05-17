@@ -19,7 +19,7 @@ import {
   saveListasPrecios,
   savePagos,
   saveProductos,
-  registrarAccion,
+  logAudit,
   obtenerAuditoria,
   verificarPrimerAdmin,
   crearPrimerAdmin,
@@ -30,7 +30,7 @@ import {
   rechazarUsuario,
 } from './lib/storage';
 
-type Page = 'inicio' | 'dashboard' | 'clientes' | 'cuenta' | 'historial' | 'nuevo-cliente' | 'productos' | 'backup' | 'login' | 'admin' | 'listas-precios';
+type Page = 'inicio' | 'dashboard' | 'clientes' | 'cuenta' | 'historial' | 'nuevo-cliente' | 'productos' | 'backup' | 'login' | 'admin' | 'listas-precios' | 'auditoria';
 
 interface RowFactura extends FacturaItem {
   query: string;
@@ -208,6 +208,13 @@ function App() {
   const [creatingAdmin, setCreatingAdmin] = useState(false);
   const [loggingIn, setLoggingIn] = useState(false);
   const [registering, setRegistering] = useState(false);
+  const [auditData, setAuditData] = useState<any[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditFilterUsuario, setAuditFilterUsuario] = useState('');
+  const [auditFilterEntidad, setAuditFilterEntidad] = useState('');
+  const [auditFilterDesde, setAuditFilterDesde] = useState('');
+  const [auditFilterHasta, setAuditFilterHasta] = useState('');
+  const [auditExpandedId, setAuditExpandedId] = useState<string | null>(null);
 
   // Verificar primer admin al cargar
   useEffect(() => {
@@ -269,6 +276,29 @@ function App() {
       console.error('Error cargando usuarios pendientes:', error);
     }
   };
+
+  const loadAuditData = async () => {
+    setAuditLoading(true);
+    try {
+      const data = await obtenerAuditoria({
+        usuario: auditFilterUsuario || undefined,
+        entidad: auditFilterEntidad || undefined,
+        desde: auditFilterDesde || undefined,
+        hasta: auditFilterHasta || undefined,
+      });
+      setAuditData(data);
+    } catch (err) {
+      console.error('Error cargando auditoría:', err);
+    } finally {
+      setAuditLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (page === 'auditoria' && currentUserData?.rol === 'admin') {
+      loadAuditData();
+    }
+  }, [page]);
 
   useEffect(() => {
     // Solo cargar datos si hay un usuario logueado
@@ -498,39 +528,13 @@ function App() {
     setFacturas(nextFacturas);
     await saveFacturas(nextFacturas);
 
-    // Registrar auditoría detallada
     if (currentUser) {
-      const fechaHora = new Date().toLocaleString('es-AR', {
-        timeZone: 'America/Argentina/Buenos_Aires',
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
-      });
-
-      const productosDetalle = items.map(item =>
-        `  - ${item.nombre} (${item.categoria}, ${item.talle}, ${item.color}) x${item.cant} = ${formatMoney(item.precio * item.cant)}`
-      ).join('\n');
-
-      await registrarAccion(
-        currentUser,
-        `🧾 FACTURA CREADA por ${currentUser}`,
-        'factura',
-        factura.id,
-        `📋 DETALLES DE LA FACTURA:
-• Cliente: ${invoiceClienteActual?.nombre}
-• Fecha factura: ${invoiceDate}
-• Total: ${formatMoney(factura.total)}
-• Cantidad de productos: ${items.length}
-
-📦 PRODUCTOS FACTURADOS:
-${productosDetalle}
-
-• Creado por: ${currentUser}
-• Fecha/Hora: ${fechaHora}`
-      );
+      const accion = editingFactura ? 'FACTURA_EDITADA' : 'FACTURA_CREADA';
+      const antes = editingFactura
+        ? { clienteId: editingFactura.clienteId, fecha: editingFactura.fecha, total: editingFactura.total, items: editingFactura.items }
+        : null;
+      const despues = { clienteId: factura.clienteId, clienteNombre: invoiceClienteActual?.nombre, fecha: factura.fecha, total: factura.total, items: factura.items };
+      await logAudit(currentUser, accion, 'factura', factura.id, antes, despues);
     }
 
     setRows([
@@ -563,31 +567,10 @@ ${productosDetalle}
         setClientes(nextClientes);
         await saveClientes(nextClientes);
 
-        // Registrar auditoría detallada para edición
         if (currentUser) {
-          const fechaHora = new Date().toLocaleString('es-AR', {
-            timeZone: 'America/Argentina/Buenos_Aires',
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit'
-          });
-          await registrarAccion(
-            currentUser,
-            `✏️ CLIENTE EDITADO por ${currentUser}`,
-            'cliente',
-            clienteActualizado.id,
-            `📋 CLIENTE MODIFICADO:
-• Nombre: ${clienteActualizado.nombre}
-• Teléfono: ${clienteActualizado.tel || 'No especificado'}
-• Email: ${clienteActualizado.email || 'No especificado'}
-• Categoría: ${clienteActualizado.cat === 'especial' ? 'ESPECIAL (precios diferenciados)' : 'GENERAL'}
-• Notas: ${clienteActualizado.notas || 'Sin notas'}
-• Modificado por: ${currentUser}
-• Fecha/Hora: ${fechaHora}`
-          );
+          const antes = { nombre: editingClient.nombre, tel: editingClient.tel, email: editingClient.email, cat: editingClient.cat };
+          const despues = { nombre: clienteActualizado.nombre, tel: clienteActualizado.tel, email: clienteActualizado.email, cat: clienteActualizado.cat };
+          await logAudit(currentUser, 'CLIENTE_EDITADO', 'cliente', clienteActualizado.id, antes, despues);
         }
 
         setEditingClient(null);
@@ -606,31 +589,9 @@ ${productosDetalle}
         setClientes(nextClientes);
         await saveClientes(nextClientes);
 
-        // Registrar auditoría detallada
         if (currentUser) {
-          const fechaHora = new Date().toLocaleString('es-AR', {
-            timeZone: 'America/Argentina/Buenos_Aires',
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit'
-          });
-          await registrarAccion(
-            currentUser,
-            `👥 CLIENTE AGREGADO por ${currentUser}`,
-            'cliente',
-            cliente.id,
-            `📋 DETALLES DEL CLIENTE:
-• Nombre: ${cliente.nombre}
-• Teléfono: ${cliente.tel || 'No especificado'}
-• Email: ${cliente.email || 'No especificado'}
-• Categoría: ${cliente.cat === 'especial' ? 'ESPECIAL (precios diferenciados)' : 'GENERAL'}
-• Notas: ${cliente.notas || 'Sin notas'}
-• Agregado por: ${currentUser}
-• Fecha/Hora: ${fechaHora}`
-          );
+          const despues = { nombre: cliente.nombre, tel: cliente.tel, email: cliente.email, cat: cliente.cat };
+          await logAudit(currentUser, 'CLIENTE_CREADO', 'cliente', cliente.id, null, despues);
         }
 
         success(`✅ CLIENTE AGREGADO: ${cliente.nombre} se agregó correctamente al sistema`);
@@ -686,38 +647,11 @@ ${productosDetalle}
     setClientes(nextClientes);
     await saveClientes(nextClientes);
 
-    // Registrar auditoría detallada
     if (currentUser) {
-      const fechaHora = new Date().toLocaleString('es-AR', {
-        timeZone: 'America/Argentina/Buenos_Aires',
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
-      });
-
       const facturasEliminadas = facturas.filter(f => f.clienteId === clientId).length;
       const pagosEliminados = pagos.filter(p => p.clienteId === clientId).length;
-
-      await registrarAccion(
-        currentUser,
-        `🗑️ CLIENTE ELIMINADO por ${currentUser}`,
-        'cliente',
-        clientId,
-        `📋 CLIENTE ELIMINADO:
-• Nombre: ${client.nombre}
-• Teléfono: ${client.tel || 'No especificado'}
-• Email: ${client.email || 'No especificado'}
-• Categoría: ${client.cat === 'especial' ? 'ESPECIAL' : 'GENERAL'}
-• Facturas eliminadas: ${facturasEliminadas}
-• Pagos eliminados: ${pagosEliminados}
-• Eliminado por: ${currentUser}
-• Fecha/Hora: ${fechaHora}
-
-⚠️ ATENCIÓN: Toda la información asociada a este cliente fue eliminada permanentemente.`
-      );
+      const antes = { nombre: client.nombre, tel: client.tel, email: client.email, cat: client.cat, facturasEliminadas, pagosEliminados };
+      await logAudit(currentUser, 'CLIENTE_ELIMINADO', 'cliente', clientId, antes, null);
     }
 
     success(`✅ CLIENTE ELIMINADO: ${client.nombre} se eliminó correctamente del sistema`);
@@ -742,9 +676,8 @@ ${productosDetalle}
     await saveFacturas(nextFacturas);
 
     if (currentUser) {
-      const fechaHora = new Date().toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      await registrarAccion(currentUser, `🗑️ FACTURA ELIMINADA por ${currentUser}`, 'factura', facturaId,
-        `• Cliente: ${cliente?.nombre}\n• Total: ${formatMoney(factura.total)}\n• Fecha factura: ${factura.fecha}\n• Eliminada por: ${currentUser}\n• Fecha/Hora: ${fechaHora}`);
+      const antes = { clienteId: factura.clienteId, clienteNombre: cliente?.nombre, fecha: factura.fecha, total: factura.total, items: factura.items };
+      await logAudit(currentUser, 'FACTURA_ELIMINADA', 'factura', facturaId, antes, null);
     }
     success('Factura eliminada correctamente');
   };
@@ -778,31 +711,9 @@ ${productosDetalle}
       setPagos(nextPagos);
       await savePagos(nextPagos);
 
-      // Registrar auditoría detallada
       if (currentUser) {
-        const fechaHora = new Date().toLocaleString('es-AR', {
-          timeZone: 'America/Argentina/Buenos_Aires',
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit'
-        });
-        await registrarAccion(
-          currentUser,
-          `💰 PAGO REGISTRADO por ${currentUser}`,
-          'pago',
-          pago.id,
-          `📋 DETALLES DEL PAGO:
-• Cliente: ${cliente?.nombre || 'Cliente desconocido'}
-• Monto: ${formatMoney(paymentAmount)}
-• Forma de pago: ${paymentForm}
-• Fecha del pago: ${paymentDate}
-• Notas: ${paymentNotes || 'Sin notas'}
-• Registrado por: ${currentUser}
-• Fecha/Hora: ${fechaHora}`
-        );
+        const despues = { clienteId: pago.clienteId, clienteNombre: cliente?.nombre, fecha: pago.fecha, monto: pago.monto, forma: pago.forma, notas: pago.notas };
+        await logAudit(currentUser, 'PAGO_CREADO', 'pago', pago.id, null, despues);
       }
 
       setPaymentModalOpen(false);
@@ -855,32 +766,10 @@ ${productosDetalle}
         setProductos(nextProductos);
         await saveProductos(nextProductos);
 
-        // Registrar auditoría detallada para edición de producto
         if (currentUser) {
-          const fechaHora = new Date().toLocaleString('es-AR', {
-            timeZone: 'America/Argentina/Buenos_Aires',
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit'
-          });
-          await registrarAccion(
-            currentUser,
-            `✏️ PRODUCTO EDITADO por ${currentUser}`,
-            'producto',
-            productEdit.id,
-            `📋 PRODUCTO MODIFICADO:
-• Nombre: ${trimmed.nombre}
-• Categoría: ${trimmed.categoria}
-• Talle: ${trimmed.talle}
-• Color: ${trimmed.color}
-• Precio general: ${formatMoney(trimmed.precio)}
-• Precio especial: ${trimmed.precioEsp ? formatMoney(trimmed.precioEsp) : 'No definido'}
-• Modificado por: ${currentUser}
-• Fecha/Hora: ${fechaHora}`
-          );
+          const antes = { nombre: productEdit.nombre, categoria: productEdit.categoria, talle: productEdit.talle, color: productEdit.color, precio: productEdit.precio, precioEsp: productEdit.precioEsp };
+          const despues = { nombre: trimmed.nombre, categoria: trimmed.categoria, talle: trimmed.talle, color: trimmed.color, precio: trimmed.precio, precioEsp: trimmed.precioEsp };
+          await logAudit(currentUser, 'PRODUCTO_EDITADO', 'producto', productEdit.id, antes, despues);
         }
 
         setProductEdit(null);
@@ -894,32 +783,9 @@ ${productosDetalle}
         setProductos(nextProductos);
         await saveProductos(nextProductos);
 
-        // Registrar auditoría detallada
         if (currentUser) {
-          const fechaHora = new Date().toLocaleString('es-AR', {
-            timeZone: 'America/Argentina/Buenos_Aires',
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit'
-          });
-          await registrarAccion(
-            currentUser,
-            `🧵 PRODUCTO AGREGADO por ${currentUser}`,
-            'producto',
-            nuevo.id,
-            `📋 DETALLES DEL PRODUCTO:
-• Nombre: ${nuevo.nombre}
-• Categoría: ${nuevo.categoria}
-• Talle: ${nuevo.talle}
-• Color: ${nuevo.color}
-• Precio general: ${formatMoney(nuevo.precio)}
-• Precio especial: ${nuevo.precioEsp ? formatMoney(nuevo.precioEsp) : 'No definido'}
-• Agregado por: ${currentUser}
-• Fecha/Hora: ${fechaHora}`
-          );
+          const despues = { nombre: nuevo.nombre, categoria: nuevo.categoria, talle: nuevo.talle, color: nuevo.color, precio: nuevo.precio, precioEsp: nuevo.precioEsp };
+          await logAudit(currentUser, 'PRODUCTO_CREADO', 'producto', nuevo.id, null, despues);
         }
 
         success(`✅ PRODUCTO AGREGADO: ${trimmed.nombre} se agregó correctamente al inventario`);
@@ -956,34 +822,9 @@ ${productosDetalle}
     setProductos(next);
     await saveProductos(next);
 
-    // Registrar auditoría detallada
     if (currentUser) {
-      const fechaHora = new Date().toLocaleString('es-AR', {
-        timeZone: 'America/Argentina/Buenos_Aires',
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
-      });
-      await registrarAccion(
-        currentUser,
-        `🗑️ PRODUCTO ELIMINADO por ${currentUser}`,
-        'producto',
-        id,
-        `📋 PRODUCTO ELIMINADO:
-• Nombre: ${producto.nombre}
-• Categoría: ${producto.categoria}
-• Talle: ${producto.talle}
-• Color: ${producto.color}
-• Precio general: ${formatMoney(producto.precio)}
-• Precio especial: ${producto.precioEsp ? formatMoney(producto.precioEsp) : 'No definido'}
-• Eliminado por: ${currentUser}
-• Fecha/Hora: ${fechaHora}
-
-⚠️ ATENCIÓN: El producto fue eliminado permanentemente del inventario.`
-      );
+      const antes = { nombre: producto.nombre, categoria: producto.categoria, talle: producto.talle, color: producto.color, precio: producto.precio, precioEsp: producto.precioEsp };
+      await logAudit(currentUser, 'PRODUCTO_ELIMINADO', 'producto', id, antes, null);
     }
 
     success('Producto eliminado exitosamente');
@@ -1087,31 +928,9 @@ ${productosDetalle}
       success(`✅ ¡BIENVENIDO ${userData.username.toUpperCase()}! Has iniciado sesión correctamente.`);
 
       try {
-        const fechaHora = new Date().toLocaleString('es-AR', {
-          timeZone: 'America/Argentina/Buenos_Aires',
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit'
-        });
-        await registrarAccion(
-          userData.username,
-          `🔐 INICIO DE SESIÓN`,
-          'cliente',
-          undefined,
-          `📋 ACCESO AL SISTEMA:
-• Usuario: ${userData.username}
-• Rol: ${userData.rol.toUpperCase()}
-• Email: ${userData.email}
-• Fecha/Hora: ${fechaHora}
-
-✅ Usuario conectado exitosamente al sistema de cuenta corriente.`
-        );
+        await logAudit(userData.username, 'INICIO_SESION', 'usuario', userData.id, null, { username: userData.username, rol: userData.rol, email: userData.email });
       } catch (auditError) {
         console.warn('⚠️ Error registrando auditoría de login:', auditError);
-        // No fallar por esto
       }
     } catch (err: any) {
       console.error('❌ Error en login:', err);
@@ -1185,32 +1004,9 @@ ${productosDetalle}
       success(`Administrador creado exitosamente. Bienvenido ${userData.username}!`);
 
       try {
-        const fechaHora = new Date().toLocaleString('es-AR', {
-          timeZone: 'America/Argentina/Buenos_Aires',
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit'
-        });
-        await registrarAccion(
-          userData.username,
-          `👑 PRIMER ADMINISTRADOR CREADO`,
-          'cliente',
-          undefined,
-          `📋 CONFIGURACIÓN INICIAL COMPLETADA:
-• Username: ${userData.username}
-• Email: ${userData.email}
-• Rol: ADMINISTRADOR
-• Fecha/Hora: ${fechaHora}
-
-🎉 ¡Sistema de cuenta corriente inicializado exitosamente!
-✅ El administrador puede ahora gestionar usuarios y todas las funciones del sistema.`
-        );
+        await logAudit(userData.username, 'PRIMER_ADMIN_CREADO', 'usuario', userData.id, null, { username: userData.username, rol: userData.rol, email: userData.email });
       } catch (auditError) {
         console.warn('⚠️ Error registrando auditoría:', auditError);
-        // No fallar por esto
       }
     } catch (err: any) {
       console.error('❌ Error creando administrador:', err);
@@ -1286,33 +1082,10 @@ ${productosDetalle}
 
       console.log('✅ Registro completado exitosamente');
 
-      // Registrar auditoría para nuevo registro
       try {
-        const fechaHora = new Date().toLocaleString('es-AR', {
-          timeZone: 'America/Argentina/Buenos_Aires',
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit'
-        });
-        await registrarAccion(
-          registerUsername,
-          `📝 NUEVO USUARIO REGISTRADO`,
-          'cliente',
-          undefined,
-          `📋 SOLICITUD DE REGISTRO:
-• Username: ${registerUsername}
-• Email: ${registerEmail}
-• Estado: PENDIENTE de aprobación
-• Fecha/Hora: ${fechaHora}
-
-⏳ Usuario esperando aprobación de administrador para acceder al sistema.`
-        );
+        await logAudit(registerUsername, 'USUARIO_REGISTRADO', 'usuario', undefined, null, { username: registerUsername, email: registerEmail, estado: 'pendiente' });
       } catch (auditError) {
         console.warn('⚠️ Error registrando auditoría de registro:', auditError);
-        // No fallar por esto
       }
 
       // Limpiar formulario
@@ -1349,31 +1122,10 @@ ${productosDetalle}
       await aprobarUsuario(userId, currentUserData.username);
       await loadUsuariosPendientes();
 
-      // Registrar auditoría detallada
       if (currentUserData && usuarioPendiente) {
-        const fechaHora = new Date().toLocaleString('es-AR', {
-          timeZone: 'America/Argentina/Buenos_Aires',
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit'
-        });
-        await registrarAccion(
-          currentUserData.username,
-          `✅ USUARIO APROBADO por ${currentUserData.username}`,
-          'cliente',
-          userId,
-          `📋 USUARIO APROBADO:
-• Username: ${usuarioPendiente.username}
-• Email: ${usuarioPendiente.email}
-• Fecha registro: ${new Date(usuarioPendiente.created_at).toLocaleDateString('es-AR')}
-• Aprobado por: ${currentUserData.username} (${currentUserData.rol})
-• Fecha/Hora: ${fechaHora}
-
-✅ El usuario ahora puede acceder al sistema con credenciales completas.`
-        );
+        const antes = { username: usuarioPendiente.username, email: usuarioPendiente.email, estado: 'pendiente' };
+        const despues = { username: usuarioPendiente.username, email: usuarioPendiente.email, estado: 'aprobado', aprobadoPor: currentUserData.username };
+        await logAudit(currentUserData.username, 'USUARIO_APROBADO', 'usuario', userId, antes, despues);
       }
 
       success(`✅ USUARIO APROBADO: ${usuarioPendiente?.username || 'Usuario'} puede acceder al sistema`);
@@ -1392,31 +1144,10 @@ ${productosDetalle}
       await rechazarUsuario(userId, currentUserData.username);
       await loadUsuariosPendientes();
 
-      // Registrar auditoría detallada
       if (currentUserData && usuarioPendiente) {
-        const fechaHora = new Date().toLocaleString('es-AR', {
-          timeZone: 'America/Argentina/Buenos_Aires',
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit'
-        });
-        await registrarAccion(
-          currentUserData.username,
-          `❌ USUARIO RECHAZADO por ${currentUserData.username}`,
-          'cliente',
-          userId,
-          `📋 USUARIO RECHAZADO:
-• Username: ${usuarioPendiente.username}
-• Email: ${usuarioPendiente.email}
-• Fecha registro: ${new Date(usuarioPendiente.created_at).toLocaleDateString('es-AR')}
-• Rechazado por: ${currentUserData.username} (${currentUserData.rol})
-• Fecha/Hora: ${fechaHora}
-
-❌ El usuario no puede acceder al sistema. Registro denegado permanentemente.`
-        );
+        const antes = { username: usuarioPendiente.username, email: usuarioPendiente.email, estado: 'pendiente' };
+        const despues = { username: usuarioPendiente.username, email: usuarioPendiente.email, estado: 'rechazado', rechazadoPor: currentUserData.username };
+        await logAudit(currentUserData.username, 'USUARIO_RECHAZADO', 'usuario', userId, antes, despues);
       }
 
       success(`❌ USUARIO RECHAZADO: ${usuarioPendiente?.username || 'Usuario'} fue denegado el acceso`);
@@ -1429,34 +1160,11 @@ ${productosDetalle}
     const usuarioSaliente = currentUser;
     const datosUsuario = currentUserData;
 
-    // Registrar auditoría de cierre de sesión antes de limpiar datos
     if (usuarioSaliente && datosUsuario) {
       try {
-        const fechaHora = new Date().toLocaleString('es-AR', {
-          timeZone: 'America/Argentina/Buenos_Aires',
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit'
-        });
-        await registrarAccion(
-          usuarioSaliente,
-          `🚪 CIERRE DE SESIÓN`,
-          'cliente',
-          undefined,
-          `📋 SALIDA DEL SISTEMA:
-• Usuario: ${usuarioSaliente}
-• Rol: ${datosUsuario.rol.toUpperCase()}
-• Email: ${datosUsuario.email}
-• Fecha/Hora: ${fechaHora}
-
-👋 Usuario desconectado del sistema de cuenta corriente.`
-        );
+        await logAudit(usuarioSaliente, 'CIERRE_SESION', 'usuario', datosUsuario.id, { username: usuarioSaliente, rol: datosUsuario.rol }, null);
       } catch (auditError) {
         console.warn('⚠️ Error registrando auditoría de logout:', auditError);
-        // No fallar por esto
       }
     }
 
@@ -2606,6 +2314,192 @@ ${productosDetalle}
                     {backupError && <p className="mt-3 text-sm text-red-600">{backupError}</p>}
                   </div>
                 </div>
+              </div>
+            </section>
+          )}
+
+          {page === 'auditoria' && (
+            <section className="space-y-6">
+              <div>
+                <h2 className="text-3xl font-bold text-textPrimary">Auditoría del sistema</h2>
+                <p className="mt-1 text-sm text-textSecondary">Registro completo de todas las acciones realizadas por los usuarios.</p>
+              </div>
+
+              {/* Filtros */}
+              <div className="rounded-3xl bg-panel p-6 shadow-panel">
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <label className="space-y-2 text-sm text-textSecondary">
+                    Usuario
+                    <input
+                      type="text"
+                      value={auditFilterUsuario}
+                      onChange={(e) => setAuditFilterUsuario(e.target.value)}
+                      placeholder="Filtrar por usuario..."
+                      className="w-full rounded-2xl border border-border bg-surface px-4 py-2 text-sm text-textPrimary outline-none transition focus:border-accent"
+                    />
+                  </label>
+                  <label className="space-y-2 text-sm text-textSecondary">
+                    Entidad
+                    <select
+                      value={auditFilterEntidad}
+                      onChange={(e) => setAuditFilterEntidad(e.target.value)}
+                      className="w-full rounded-2xl border border-border bg-surface px-4 py-2 text-sm text-textPrimary outline-none transition focus:border-accent"
+                    >
+                      <option value="">Todas</option>
+                      <option value="cliente">Cliente</option>
+                      <option value="producto">Producto</option>
+                      <option value="factura">Factura</option>
+                      <option value="pago">Pago</option>
+                      <option value="usuario">Usuario</option>
+                    </select>
+                  </label>
+                  <label className="space-y-2 text-sm text-textSecondary">
+                    Desde
+                    <input
+                      type="date"
+                      value={auditFilterDesde}
+                      onChange={(e) => setAuditFilterDesde(e.target.value)}
+                      className="w-full rounded-2xl border border-border bg-surface px-4 py-2 text-sm text-textPrimary outline-none transition focus:border-accent"
+                    />
+                  </label>
+                  <label className="space-y-2 text-sm text-textSecondary">
+                    Hasta
+                    <input
+                      type="date"
+                      value={auditFilterHasta}
+                      onChange={(e) => setAuditFilterHasta(e.target.value)}
+                      className="w-full rounded-2xl border border-border bg-surface px-4 py-2 text-sm text-textPrimary outline-none transition focus:border-accent"
+                    />
+                  </label>
+                </div>
+                <div className="mt-4 flex gap-3">
+                  <button
+                    type="button"
+                    onClick={loadAuditData}
+                    disabled={auditLoading}
+                    className="rounded-3xl bg-accent px-5 py-2 text-sm font-semibold text-white transition hover:bg-indigo-600 disabled:opacity-50"
+                  >
+                    {auditLoading ? 'Cargando...' : 'Buscar'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setAuditFilterUsuario(''); setAuditFilterEntidad(''); setAuditFilterDesde(''); setAuditFilterHasta(''); }}
+                    className="rounded-3xl bg-panel px-5 py-2 text-sm font-semibold text-textPrimary ring-1 ring-border transition hover:bg-surface"
+                  >
+                    Limpiar
+                  </button>
+                </div>
+              </div>
+
+              {/* Tabla */}
+              <div className="rounded-3xl bg-panel shadow-panel overflow-hidden">
+                {auditLoading ? (
+                  <div className="p-10 text-center text-textSecondary">Cargando registros...</div>
+                ) : auditData.length === 0 ? (
+                  <div className="p-10 text-center text-textSecondary">No hay registros de auditoría.</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse text-sm">
+                      <thead className="bg-surface text-textSecondary">
+                        <tr>
+                          <th className="px-4 py-3 text-left">Fecha</th>
+                          <th className="px-4 py-3 text-left">Usuario</th>
+                          <th className="px-4 py-3 text-left">Acción</th>
+                          <th className="px-4 py-3 text-left">Entidad</th>
+                          <th className="px-4 py-3 text-left">Detalles</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {auditData.map((row) => {
+                          const isExpanded = auditExpandedId === row.id;
+                          let parsed: any = null;
+                          let isStructured = false;
+                          try {
+                            if (row.detalles) {
+                              parsed = JSON.parse(row.detalles);
+                              isStructured = parsed?.v === 2;
+                            }
+                          } catch { /* plain text detalles */ }
+
+                          const fecha = row.fecha ? new Date(row.fecha).toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+
+                          return (
+                            <>
+                              <tr key={row.id} className="border-t border-border hover:bg-surface">
+                                <td className="px-4 py-3 text-textSecondary whitespace-nowrap">{fecha}</td>
+                                <td className="px-4 py-3 font-medium">{row.usuario}</td>
+                                <td className="px-4 py-3">
+                                  <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${
+                                    row.accion?.includes('ELIMINAD') ? 'bg-red-900/40 text-red-300' :
+                                    row.accion?.includes('EDITAD') ? 'bg-amber-900/40 text-amber-300' :
+                                    row.accion?.includes('CREAD') || row.accion?.includes('REGISTRAD') ? 'bg-green-900/40 text-green-300' :
+                                    row.accion?.includes('SESION') ? 'bg-blue-900/40 text-blue-300' :
+                                    'bg-surface text-textSecondary'
+                                  }`}>
+                                    {row.accion}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 text-textSecondary capitalize">{row.entidad}</td>
+                                <td className="px-4 py-3">
+                                  {(isStructured || row.detalles) && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setAuditExpandedId(isExpanded ? null : row.id)}
+                                      className="rounded-2xl bg-surface px-3 py-1 text-xs text-textPrimary ring-1 ring-border transition hover:bg-border"
+                                    >
+                                      {isExpanded ? 'Ocultar' : 'Ver detalles'}
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                              {isExpanded && (
+                                <tr key={`${row.id}-detail`} className="bg-surface border-t border-border">
+                                  <td colSpan={5} className="px-6 py-4">
+                                    {isStructured ? (
+                                      <div className="grid gap-4 sm:grid-cols-2">
+                                        {parsed.antes && (
+                                          <div>
+                                            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-red-400">Antes</p>
+                                            <div className="rounded-2xl bg-panel p-3 space-y-1">
+                                              {Object.entries(parsed.antes).map(([k, v]) => (
+                                                <div key={k} className="flex gap-2 text-xs">
+                                                  <span className="text-textSecondary min-w-[90px]">{k}:</span>
+                                                  <span className="text-textPrimary break-all">{JSON.stringify(v)}</span>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        )}
+                                        {parsed.despues && (
+                                          <div>
+                                            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-green-400">Después</p>
+                                            <div className="rounded-2xl bg-panel p-3 space-y-1">
+                                              {Object.entries(parsed.despues).map(([k, v]) => (
+                                                <div key={k} className="flex gap-2 text-xs">
+                                                  <span className="text-textSecondary min-w-[90px]">{k}:</span>
+                                                  <span className="text-textPrimary break-all">{JSON.stringify(v)}</span>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        )}
+                                        {!parsed.antes && !parsed.despues && (
+                                          <div className="sm:col-span-2 text-xs text-textSecondary whitespace-pre-wrap">{row.detalles}</div>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <pre className="text-xs text-textSecondary whitespace-pre-wrap">{row.detalles}</pre>
+                                    )}
+                                  </td>
+                                </tr>
+                              )}
+                            </>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             </section>
           )}

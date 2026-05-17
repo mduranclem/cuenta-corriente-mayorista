@@ -397,14 +397,53 @@ export async function registrarAccion(
   }
 }
 
-export async function obtenerAuditoria(): Promise<any[]> {
+export interface AuditoriaFiltros {
+  usuario?: string;
+  entidad?: string;
+  desde?: string;
+  hasta?: string;
+}
+
+export async function logAudit(
+  usuario: string,
+  accion: string,
+  entidad: string,
+  entidadId: string | undefined,
+  antes: Record<string, unknown> | null,
+  despues: Record<string, unknown> | null
+) {
   try {
-    const { data, error } = await supabase
+    const detalles = JSON.stringify({ v: 2, accion, entidad, antes, despues });
+    const { error } = await supabase
+      .from('auditoria')
+      .insert({
+        usuario,
+        accion,
+        entidad,
+        entidad_id: entidadId,
+        detalles,
+        fecha: new Date().toISOString(),
+      });
+    if (error) throw error;
+  } catch (err) {
+    console.error('Error registrando auditoría:', err);
+  }
+}
+
+export async function obtenerAuditoria(filtros?: AuditoriaFiltros): Promise<any[]> {
+  try {
+    let query = supabase
       .from('auditoria')
       .select('*')
       .order('created_at', { ascending: false })
-      .limit(100);
+      .limit(500);
 
+    if (filtros?.usuario) query = query.ilike('usuario', `%${filtros.usuario}%`);
+    if (filtros?.entidad) query = query.eq('entidad', filtros.entidad);
+    if (filtros?.desde) query = query.gte('fecha', filtros.desde);
+    if (filtros?.hasta) query = query.lte('fecha', filtros.hasta + 'T23:59:59');
+
+    const { data, error } = await query;
     if (error) throw error;
     return data || [];
   } catch (error) {

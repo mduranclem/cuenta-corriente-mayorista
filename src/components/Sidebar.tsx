@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-type SidebarPage = 'inicio' | 'dashboard' | 'clientes' | 'cuenta' | 'historial' | 'nuevo-cliente' | 'productos' | 'backup' | 'admin' | 'listas-precios';
+type SidebarPage = 'inicio' | 'dashboard' | 'clientes' | 'cuenta' | 'historial' | 'nuevo-cliente' | 'productos' | 'backup' | 'admin' | 'listas-precios' | 'auditoria';
 
 interface SidebarItem {
   id: SidebarPage;
@@ -18,8 +18,9 @@ const mainItems: SidebarItem[] = [
 ];
 
 const secondaryItems: SidebarItem[] = [
-  { id: 'admin',  label: 'Administración', icon: <span className="text-lg">⚙️</span> },
-  { id: 'backup', label: 'Respaldo',       icon: <span className="text-lg">💾</span> },
+  { id: 'admin',     label: 'Administración', icon: <span className="text-lg">⚙️</span> },
+  { id: 'auditoria', label: 'Auditoría',       icon: <span className="text-lg">🛡️</span> },
+  { id: 'backup',    label: 'Respaldo',        icon: <span className="text-lg">💾</span> },
 ];
 
 interface SidebarProps {
