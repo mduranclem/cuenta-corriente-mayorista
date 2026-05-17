@@ -3,7 +3,7 @@ import { Sidebar } from './components/Sidebar';
 import { Modal } from './components/Modal';
 import { Toast } from './components/Toast';
 import { useToast } from './hooks/useToast';
-import type { Cliente, Factura, FacturaItem, FormaPago, ListaPrecio, Producto } from './types';
+import type { Cliente, Factura, FacturaItem, FormaPago, ListaPrecio, Pago, Producto } from './types';
 import type { BackupPayload } from './lib/storage';
 import {
   exportBackup,
@@ -215,6 +215,8 @@ function App() {
   const [auditFilterDesde, setAuditFilterDesde] = useState('');
   const [auditFilterHasta, setAuditFilterHasta] = useState('');
   const [auditExpandedId, setAuditExpandedId] = useState<string | null>(null);
+  const [resumenDeudaOpen, setResumenDeudaOpen] = useState(false);
+  const [resumenPagoDetalle, setResumenPagoDetalle] = useState<Pago | null>(null);
 
   // Verificar primer admin al cargar
   useEffect(() => {
@@ -396,6 +398,18 @@ function App() {
     const ultimos3Pagos = [...pagos].sort((a, b) => b.fecha.localeCompare(a.fecha)).slice(0, 3);
     return { deudaTotal, clientesConDeuda, ultimas5Facturas, ultimos3Pagos };
   }, [clientes, facturas, pagos, orderedFacturas]);
+
+  const clientesConDeudaDetalle = useMemo(() =>
+    clientes
+      .map(c => {
+        const totalF = facturas.filter(f => f.clienteId === c.id).reduce((s, f) => s + f.total, 0);
+        const totalP = pagos.filter(p => p.clienteId === c.id).reduce((s, p) => s + p.monto, 0);
+        return { cliente: c, saldo: totalF - totalP };
+      })
+      .filter(x => x.saldo > 0)
+      .sort((a, b) => b.saldo - a.saldo),
+    [clientes, facturas, pagos]
+  );
 
   const todasLasListas = useMemo(
     () => [...LISTAS_BUILTIN, ...listasPrecios],
@@ -928,7 +942,7 @@ function App() {
       success(`✅ ¡BIENVENIDO ${userData.username.toUpperCase()}! Has iniciado sesión correctamente.`);
 
       try {
-        await logAudit(userData.username, 'INICIO_SESION', 'usuario', userData.id, null, { username: userData.username, rol: userData.rol, email: userData.email });
+        await logAudit(userData.username, 'INICIO_SESION', 'cliente', userData.id, null, { username: userData.username, rol: userData.rol, email: userData.email });
       } catch (auditError) {
         console.warn('⚠️ Error registrando auditoría de login:', auditError);
       }
@@ -1004,7 +1018,7 @@ function App() {
       success(`Administrador creado exitosamente. Bienvenido ${userData.username}!`);
 
       try {
-        await logAudit(userData.username, 'PRIMER_ADMIN_CREADO', 'usuario', userData.id, null, { username: userData.username, rol: userData.rol, email: userData.email });
+        await logAudit(userData.username, 'PRIMER_ADMIN_CREADO', 'cliente', userData.id, null, { username: userData.username, rol: userData.rol, email: userData.email });
       } catch (auditError) {
         console.warn('⚠️ Error registrando auditoría:', auditError);
       }
@@ -1083,7 +1097,7 @@ function App() {
       console.log('✅ Registro completado exitosamente');
 
       try {
-        await logAudit(registerUsername, 'USUARIO_REGISTRADO', 'usuario', undefined, null, { username: registerUsername, email: registerEmail, estado: 'pendiente' });
+        await logAudit(registerUsername, 'USUARIO_REGISTRADO', 'cliente', undefined, null, { username: registerUsername, email: registerEmail, estado: 'pendiente' });
       } catch (auditError) {
         console.warn('⚠️ Error registrando auditoría de registro:', auditError);
       }
@@ -1125,7 +1139,7 @@ function App() {
       if (currentUserData && usuarioPendiente) {
         const antes = { username: usuarioPendiente.username, email: usuarioPendiente.email, estado: 'pendiente' };
         const despues = { username: usuarioPendiente.username, email: usuarioPendiente.email, estado: 'aprobado', aprobadoPor: currentUserData.username };
-        await logAudit(currentUserData.username, 'USUARIO_APROBADO', 'usuario', userId, antes, despues);
+        await logAudit(currentUserData.username, 'USUARIO_APROBADO', 'cliente', userId, antes, despues);
       }
 
       success(`✅ USUARIO APROBADO: ${usuarioPendiente?.username || 'Usuario'} puede acceder al sistema`);
@@ -1147,7 +1161,7 @@ function App() {
       if (currentUserData && usuarioPendiente) {
         const antes = { username: usuarioPendiente.username, email: usuarioPendiente.email, estado: 'pendiente' };
         const despues = { username: usuarioPendiente.username, email: usuarioPendiente.email, estado: 'rechazado', rechazadoPor: currentUserData.username };
-        await logAudit(currentUserData.username, 'USUARIO_RECHAZADO', 'usuario', userId, antes, despues);
+        await logAudit(currentUserData.username, 'USUARIO_RECHAZADO', 'cliente', userId, antes, despues);
       }
 
       success(`❌ USUARIO RECHAZADO: ${usuarioPendiente?.username || 'Usuario'} fue denegado el acceso`);
@@ -1162,7 +1176,7 @@ function App() {
 
     if (usuarioSaliente && datosUsuario) {
       try {
-        await logAudit(usuarioSaliente, 'CIERRE_SESION', 'usuario', datosUsuario.id, { username: usuarioSaliente, rol: datosUsuario.rol }, null);
+        await logAudit(usuarioSaliente, 'CIERRE_SESION', 'cliente', datosUsuario.id, { username: usuarioSaliente, rol: datosUsuario.rol }, null);
       } catch (auditError) {
         console.warn('⚠️ Error registrando auditoría de logout:', auditError);
       }
@@ -1487,18 +1501,26 @@ function App() {
                 <p className="mt-1 text-sm text-textSecondary">Vista rápida del estado del negocio.</p>
               </div>
 
-              {/* Cards de métricas */}
+              {/* Cards de métricas — clickeables */}
               <div className="grid gap-4 sm:grid-cols-2">
-                <div className="rounded-3xl bg-panel p-6 shadow-panel">
+                <button
+                  type="button"
+                  onClick={() => setResumenDeudaOpen(true)}
+                  className="rounded-3xl bg-panel p-6 shadow-panel text-left cursor-pointer transition hover:ring-2 hover:ring-red-500/40 hover:bg-panel/80 focus:outline-none"
+                >
                   <p className="text-sm text-textSecondary">Deuda total acumulada</p>
                   <p className="mt-3 text-4xl font-bold text-red-400">{formatMoney(resumen.deudaTotal)}</p>
-                  <p className="mt-2 text-xs text-textSecondary">Suma de saldos pendientes de todos los clientes</p>
-                </div>
-                <div className="rounded-3xl bg-panel p-6 shadow-panel">
+                  <p className="mt-2 text-xs text-textSecondary">Suma de saldos pendientes · click para ver detalle</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setResumenDeudaOpen(true)}
+                  className="rounded-3xl bg-panel p-6 shadow-panel text-left cursor-pointer transition hover:ring-2 hover:ring-amber-500/40 hover:bg-panel/80 focus:outline-none"
+                >
                   <p className="text-sm text-textSecondary">Clientes con deuda</p>
                   <p className="mt-3 text-4xl font-bold text-amber-400">{resumen.clientesConDeuda}</p>
-                  <p className="mt-2 text-xs text-textSecondary">de {clientes.length} clientes en total</p>
-                </div>
+                  <p className="mt-2 text-xs text-textSecondary">de {clientes.length} clientes en total · click para ver detalle</p>
+                </button>
               </div>
 
               <div className="grid gap-6 lg:grid-cols-2">
@@ -1506,22 +1528,27 @@ function App() {
                 <div className="rounded-3xl bg-panel p-6 shadow-panel">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-lg font-semibold">Últimas facturas</h3>
-                    <button type="button" onClick={() => setPage('historial')} className="text-xs text-accent hover:underline">Ver todas</button>
+                    <button type="button" onClick={() => setPage('historial')} className="text-xs text-accent hover:underline">Ver todas →</button>
                   </div>
                   {resumen.ultimas5Facturas.length === 0 ? (
                     <p className="text-sm text-textSecondary">No hay facturas registradas.</p>
                   ) : (
-                    <div className="space-y-3">
+                    <div className="space-y-2">
                       {resumen.ultimas5Facturas.map((f) => {
                         const cli = clientes.find(c => c.id === f.clienteId);
                         return (
-                          <div key={f.id} className="flex items-center justify-between rounded-2xl bg-surface px-4 py-3">
+                          <button
+                            key={f.id}
+                            type="button"
+                            onClick={() => setSelectedInvoice(f.id)}
+                            className="flex w-full items-center justify-between rounded-2xl bg-surface px-4 py-3 text-left transition hover:ring-1 hover:ring-accent/40 cursor-pointer"
+                          >
                             <div>
                               <p className="text-sm font-medium text-textPrimary">{cli?.nombre ?? 'Cliente eliminado'}</p>
                               <p className="text-xs text-textSecondary">{f.fecha} · {f.items.length} ítem{f.items.length !== 1 ? 's' : ''}</p>
                             </div>
                             <span className="text-sm font-semibold text-accent">{formatMoney(f.total)}</span>
-                          </div>
+                          </button>
                         );
                       })}
                     </div>
@@ -1536,17 +1563,22 @@ function App() {
                   {resumen.ultimos3Pagos.length === 0 ? (
                     <p className="text-sm text-textSecondary">No hay pagos registrados.</p>
                   ) : (
-                    <div className="space-y-3">
+                    <div className="space-y-2">
                       {resumen.ultimos3Pagos.map((p) => {
                         const cli = clientes.find(c => c.id === p.clienteId);
                         return (
-                          <div key={p.id} className="flex items-center justify-between rounded-2xl bg-surface px-4 py-3">
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => setResumenPagoDetalle(p)}
+                            className="flex w-full items-center justify-between rounded-2xl bg-surface px-4 py-3 text-left transition hover:ring-1 hover:ring-green-500/40 cursor-pointer"
+                          >
                             <div>
                               <p className="text-sm font-medium text-textPrimary">{cli?.nombre ?? 'Cliente eliminado'}</p>
                               <p className="text-xs text-textSecondary">{p.fecha} · {p.forma}</p>
                             </div>
                             <span className="text-sm font-semibold text-green-400">{formatMoney(p.monto)}</span>
-                          </div>
+                          </button>
                         );
                       })}
                     </div>
@@ -2346,11 +2378,10 @@ function App() {
                       className="w-full rounded-2xl border border-border bg-surface px-4 py-2 text-sm text-textPrimary outline-none transition focus:border-accent"
                     >
                       <option value="">Todas</option>
-                      <option value="cliente">Cliente</option>
+                      <option value="cliente">Cliente / Usuario</option>
                       <option value="producto">Producto</option>
                       <option value="factura">Factura</option>
                       <option value="pago">Pago</option>
-                      <option value="usuario">Usuario</option>
                     </select>
                   </label>
                   <label className="space-y-2 text-sm text-textSecondary">
@@ -2410,7 +2441,7 @@ function App() {
                         </tr>
                       </thead>
                       <tbody>
-                        {auditData.map((row) => {
+                        {auditData.flatMap((row) => {
                           const isExpanded = auditExpandedId === row.id;
                           let parsed: any = null;
                           let isStructured = false;
@@ -2423,78 +2454,81 @@ function App() {
 
                           const fecha = row.fecha ? new Date(row.fecha).toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
 
-                          return (
-                            <>
-                              <tr key={row.id} className="border-t border-border hover:bg-surface">
-                                <td className="px-4 py-3 text-textSecondary whitespace-nowrap">{fecha}</td>
-                                <td className="px-4 py-3 font-medium">{row.usuario}</td>
-                                <td className="px-4 py-3">
-                                  <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${
-                                    row.accion?.includes('ELIMINAD') ? 'bg-red-900/40 text-red-300' :
-                                    row.accion?.includes('EDITAD') ? 'bg-amber-900/40 text-amber-300' :
-                                    row.accion?.includes('CREAD') || row.accion?.includes('REGISTRAD') ? 'bg-green-900/40 text-green-300' :
-                                    row.accion?.includes('SESION') ? 'bg-blue-900/40 text-blue-300' :
-                                    'bg-surface text-textSecondary'
-                                  }`}>
-                                    {row.accion}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-3 text-textSecondary capitalize">{row.entidad}</td>
-                                <td className="px-4 py-3">
-                                  {(isStructured || row.detalles) && (
-                                    <button
-                                      type="button"
-                                      onClick={() => setAuditExpandedId(isExpanded ? null : row.id)}
-                                      className="rounded-2xl bg-surface px-3 py-1 text-xs text-textPrimary ring-1 ring-border transition hover:bg-border"
-                                    >
-                                      {isExpanded ? 'Ocultar' : 'Ver detalles'}
-                                    </button>
-                                  )}
-                                </td>
-                              </tr>
-                              {isExpanded && (
-                                <tr key={`${row.id}-detail`} className="bg-surface border-t border-border">
-                                  <td colSpan={5} className="px-6 py-4">
-                                    {isStructured ? (
-                                      <div className="grid gap-4 sm:grid-cols-2">
-                                        {parsed.antes && (
-                                          <div>
-                                            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-red-400">Antes</p>
-                                            <div className="rounded-2xl bg-panel p-3 space-y-1">
-                                              {Object.entries(parsed.antes).map(([k, v]) => (
-                                                <div key={k} className="flex gap-2 text-xs">
-                                                  <span className="text-textSecondary min-w-[90px]">{k}:</span>
-                                                  <span className="text-textPrimary break-all">{JSON.stringify(v)}</span>
-                                                </div>
-                                              ))}
-                                            </div>
-                                          </div>
-                                        )}
-                                        {parsed.despues && (
-                                          <div>
-                                            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-green-400">Después</p>
-                                            <div className="rounded-2xl bg-panel p-3 space-y-1">
-                                              {Object.entries(parsed.despues).map(([k, v]) => (
-                                                <div key={k} className="flex gap-2 text-xs">
-                                                  <span className="text-textSecondary min-w-[90px]">{k}:</span>
-                                                  <span className="text-textPrimary break-all">{JSON.stringify(v)}</span>
-                                                </div>
-                                              ))}
-                                            </div>
-                                          </div>
-                                        )}
-                                        {!parsed.antes && !parsed.despues && (
-                                          <div className="sm:col-span-2 text-xs text-textSecondary whitespace-pre-wrap">{row.detalles}</div>
-                                        )}
-                                      </div>
-                                    ) : (
-                                      <pre className="text-xs text-textSecondary whitespace-pre-wrap">{row.detalles}</pre>
-                                    )}
-                                  </td>
-                                </tr>
-                              )}
-                            </>
+                          const mainRow = (
+                            <tr key={row.id} className="border-t border-border hover:bg-surface">
+                              <td className="px-4 py-3 text-textSecondary whitespace-nowrap">{fecha}</td>
+                              <td className="px-4 py-3 font-medium">{row.usuario}</td>
+                              <td className="px-4 py-3">
+                                <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${
+                                  row.accion?.includes('ELIMINAD') ? 'bg-red-900/40 text-red-300' :
+                                  row.accion?.includes('EDITAD') ? 'bg-amber-900/40 text-amber-300' :
+                                  row.accion?.includes('CREAD') || row.accion?.includes('REGISTRAD') || row.accion?.includes('APROBAD') ? 'bg-green-900/40 text-green-300' :
+                                  row.accion?.includes('SESION') ? 'bg-blue-900/40 text-blue-300' :
+                                  'bg-surface text-textSecondary'
+                                }`}>
+                                  {row.accion}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-textSecondary capitalize">{row.entidad}</td>
+                              <td className="px-4 py-3">
+                                {row.detalles && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setAuditExpandedId(isExpanded ? null : row.id)}
+                                    className="rounded-2xl bg-surface px-3 py-1 text-xs text-textPrimary ring-1 ring-border transition hover:bg-border"
+                                  >
+                                    {isExpanded ? 'Ocultar' : 'Ver detalles'}
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
                           );
+
+                          if (!isExpanded) return [mainRow];
+
+                          const detailRow = (
+                            <tr key={`${row.id}-det`} className="bg-surface border-t border-border">
+                              <td colSpan={5} className="px-6 py-4">
+                                {isStructured ? (
+                                  <div className="grid gap-4 sm:grid-cols-2">
+                                    {parsed.antes && (
+                                      <div>
+                                        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-red-400">Antes</p>
+                                        <div className="rounded-2xl bg-panel p-3 space-y-1">
+                                          {Object.entries(parsed.antes).map(([k, v]) => (
+                                            <div key={k} className="flex gap-2 text-xs">
+                                              <span className="text-textSecondary min-w-[90px]">{k}:</span>
+                                              <span className="text-textPrimary break-all">{typeof v === 'object' ? JSON.stringify(v) : String(v)}</span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                    {parsed.despues && (
+                                      <div>
+                                        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-green-400">Después</p>
+                                        <div className="rounded-2xl bg-panel p-3 space-y-1">
+                                          {Object.entries(parsed.despues).map(([k, v]) => (
+                                            <div key={k} className="flex gap-2 text-xs">
+                                              <span className="text-textSecondary min-w-[90px]">{k}:</span>
+                                              <span className="text-textPrimary break-all">{typeof v === 'object' ? JSON.stringify(v) : String(v)}</span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                    {!parsed.antes && !parsed.despues && (
+                                      <div className="sm:col-span-2 text-xs text-textSecondary whitespace-pre-wrap">{row.detalles}</div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <pre className="text-xs text-textSecondary whitespace-pre-wrap">{row.detalles}</pre>
+                                )}
+                              </td>
+                            </tr>
+                          );
+
+                          return [mainRow, detailRow];
                         })}
                       </tbody>
                     </table>
@@ -2825,6 +2859,115 @@ function App() {
                   type="button"
                   onClick={() => setSelectedInvoice(null)}
                   className="rounded-3xl bg-surface px-5 py-3 text-sm font-semibold text-textPrimary transition hover:bg-border"
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
+
+      {/* Modal deuda total — lista de clientes con saldo > 0 */}
+      <Modal
+        title="Clientes con deuda pendiente"
+        open={resumenDeudaOpen}
+        onClose={() => setResumenDeudaOpen(false)}
+      >
+        {clientesConDeudaDetalle.length === 0 ? (
+          <p className="text-sm text-textSecondary py-4 text-center">No hay clientes con saldo pendiente.</p>
+        ) : (
+          <div className="space-y-4">
+            <div className="overflow-hidden rounded-2xl border border-border">
+              <table className="w-full border-collapse text-sm">
+                <thead className="bg-surface text-textSecondary">
+                  <tr>
+                    <th className="px-4 py-3 text-left">Cliente</th>
+                    <th className="px-4 py-3 text-right">Saldo pendiente</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {clientesConDeudaDetalle.map(({ cliente, saldo }) => (
+                    <tr key={cliente.id} className="border-t border-border hover:bg-surface">
+                      <td className="px-4 py-3">
+                        <button
+                          type="button"
+                          onClick={() => { setSelectedClientId(cliente.id); setResumenDeudaOpen(false); setPage('cuenta'); }}
+                          className="text-left hover:text-accent transition"
+                        >
+                          <span className="font-medium">{cliente.nombre}</span>
+                          {cliente.tel && <span className="ml-2 text-xs text-textSecondary">{cliente.tel}</span>}
+                        </button>
+                      </td>
+                      <td className="px-4 py-3 text-right font-semibold text-amber-400">{formatMoney(saldo)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-border bg-surface">
+                    <td className="px-4 py-3 font-semibold text-textSecondary">Total</td>
+                    <td className="px-4 py-3 text-right font-bold text-red-400">
+                      {formatMoney(clientesConDeudaDetalle.reduce((s, x) => s + x.saldo, 0))}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+            <p className="text-xs text-textSecondary text-center">
+              {clientesConDeudaDetalle.length} cliente{clientesConDeudaDetalle.length !== 1 ? 's' : ''} con deuda · click en el nombre para ver su cuenta
+            </p>
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal detalle de pago individual */}
+      <Modal
+        title="Detalle del pago"
+        open={!!resumenPagoDetalle}
+        onClose={() => setResumenPagoDetalle(null)}
+      >
+        {resumenPagoDetalle && (() => {
+          const cli = clientes.find(c => c.id === resumenPagoDetalle.clienteId);
+          return (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="rounded-2xl bg-surface p-4">
+                  <p className="text-xs text-textSecondary mb-1">Cliente</p>
+                  <p className="font-semibold text-textPrimary">{cli?.nombre ?? 'Cliente eliminado'}</p>
+                  {cli?.tel && <p className="text-xs text-textSecondary mt-1">{cli.tel}</p>}
+                </div>
+                <div className="rounded-2xl bg-surface p-4">
+                  <p className="text-xs text-textSecondary mb-1">Monto</p>
+                  <p className="text-2xl font-bold text-green-400">{formatMoney(resumenPagoDetalle.monto)}</p>
+                </div>
+                <div className="rounded-2xl bg-surface p-4">
+                  <p className="text-xs text-textSecondary mb-1">Fecha</p>
+                  <p className="font-medium text-textPrimary">{resumenPagoDetalle.fecha}</p>
+                </div>
+                <div className="rounded-2xl bg-surface p-4">
+                  <p className="text-xs text-textSecondary mb-1">Forma de pago</p>
+                  <p className="font-medium text-textPrimary">{resumenPagoDetalle.forma}</p>
+                </div>
+              </div>
+              {resumenPagoDetalle.notas && (
+                <div className="rounded-2xl bg-surface p-4">
+                  <p className="text-xs text-textSecondary mb-1">Notas</p>
+                  <p className="text-sm text-textPrimary">{resumenPagoDetalle.notas}</p>
+                </div>
+              )}
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => { if (cli) { setSelectedClientId(cli.id); setResumenPagoDetalle(null); setPage('cuenta'); } }}
+                  disabled={!cli}
+                  className="rounded-3xl bg-surface px-5 py-2 text-sm font-medium text-textPrimary ring-1 ring-border transition hover:bg-border disabled:opacity-40"
+                >
+                  Ver cuenta del cliente
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setResumenPagoDetalle(null)}
+                  className="rounded-3xl bg-accent px-5 py-2 text-sm font-semibold text-white transition hover:bg-indigo-600"
                 >
                   Cerrar
                 </button>
