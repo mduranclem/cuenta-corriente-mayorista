@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-type SidebarPage = 'dashboard' | 'clientes' | 'cuenta' | 'historial' | 'nuevo-cliente' | 'productos' | 'backup' | 'admin';
+type SidebarPage = 'dashboard' | 'clientes' | 'cuenta' | 'historial' | 'nuevo-cliente' | 'productos' | 'backup' | 'admin' | 'listas-precios';
 
 interface SidebarItem {
   id: SidebarPage;
@@ -15,6 +15,7 @@ const items: SidebarItem[] = [
   { id: 'historial', label: 'Historial', icon: <span className="text-lg">📜</span> },
   { id: 'nuevo-cliente', label: 'Nuevo cliente', icon: <span className="text-lg">➕</span> },
   { id: 'productos', label: 'Productos', icon: <span className="text-lg">🧵</span> },
+  { id: 'listas-precios', label: 'Listas de precios', icon: <span className="text-lg">🏷️</span> },
   { id: 'admin', label: 'Administración', icon: <span className="text-lg">👑</span> },
   { id: 'backup', label: 'Respaldo', icon: <span className="text-lg">💾</span> },
 ];

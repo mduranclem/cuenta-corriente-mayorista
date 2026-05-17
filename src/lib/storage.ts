@@ -1,4 +1,4 @@
-import type { Cliente, Factura, Pago, Producto } from '../types';
+import type { Cliente, Factura, ListaPrecio, Pago, Producto } from '../types';
 import { supabase } from './supabase';
 
 export interface BackupPayload {
@@ -6,6 +6,25 @@ export interface BackupPayload {
   productos: Producto[];
   facturas: Factura[];
   pagos: Pago[];
+}
+
+const LISTAS_PRECIOS_KEY = 'cc_listas_precios';
+
+export const LISTAS_BUILTIN: ListaPrecio[] = [
+  { id: 'general', nombre: 'General', descuento: 0, minCantidad: 0 },
+  { id: 'especial', nombre: 'Especial', descuento: 0, minCantidad: 0 },
+];
+
+export function loadListasPrecios(): ListaPrecio[] {
+  try {
+    const saved = localStorage.getItem(LISTAS_PRECIOS_KEY);
+    if (saved) return JSON.parse(saved) as ListaPrecio[];
+  } catch { /* ignore */ }
+  return [];
+}
+
+export function saveListasPrecios(listas: ListaPrecio[]): void {
+  localStorage.setItem(LISTAS_PRECIOS_KEY, JSON.stringify(listas));
 }
 
 // Convertir tipos de la app a tipos de la BD

@@ -3,17 +3,20 @@ import { Sidebar } from './components/Sidebar';
 import { Modal } from './components/Modal';
 import { Toast } from './components/Toast';
 import { useToast } from './hooks/useToast';
-import type { Cliente, Factura, FacturaItem, FormaPago, Producto } from './types';
+import type { Cliente, Factura, FacturaItem, FormaPago, ListaPrecio, Producto } from './types';
 import type { BackupPayload } from './lib/storage';
 import {
   exportBackup,
   importBackup,
+  LISTAS_BUILTIN,
   loadClientes,
   loadFacturas,
+  loadListasPrecios,
   loadPagos,
   loadProductos,
   saveClientes,
   saveFacturas,
+  saveListasPrecios,
   savePagos,
   saveProductos,
   registrarAccion,
@@ -27,7 +30,7 @@ import {
   rechazarUsuario,
 } from './lib/storage';
 
-type Page = 'dashboard' | 'clientes' | 'cuenta' | 'historial' | 'nuevo-cliente' | 'productos' | 'backup' | 'login' | 'admin';
+type Page = 'dashboard' | 'clientes' | 'cuenta' | 'historial' | 'nuevo-cliente' | 'productos' | 'backup' | 'login' | 'admin' | 'listas-precios';
 
 interface RowFactura extends FacturaItem {
   query: string;
@@ -165,7 +168,7 @@ function App() {
   const [newClientNombre, setNewClientNombre] = useState('');
   const [newClientTel, setNewClientTel] = useState('');
   const [newClientEmail, setNewClientEmail] = useState('');
-  const [newClientCat, setNewClientCat] = useState<'general' | 'especial'>('general');
+  const [newClientCat, setNewClientCat] = useState<string>('general');
   const [newClientNotas, setNewClientNotas] = useState('');
   const [editingClient, setEditingClient] = useState<Cliente | null>(null);
   const [newProducto, setNewProducto] = useState({
@@ -180,6 +183,15 @@ function App() {
   const [backupMessage, setBackupMessage] = useState('');
   const [backupError, setBackupError] = useState('');
   const [selectedInvoice, setSelectedInvoice] = useState<string | null>(null);
+  const [editingFactura, setEditingFactura] = useState<Factura | null>(null);
+  const [listasPrecios, setListasPrecios] = useState<ListaPrecio[]>([]);
+  const [invoiceClientSearch, setInvoiceClientSearch] = useState('');
+  const [invoiceClientDropdownOpen, setInvoiceClientDropdownOpen] = useState(false);
+  const [newListaNombre, setNewListaNombre] = useState('');
+  const [newListaDescuento, setNewListaDescuento] = useState(0);
+  const [newListaMinCantidad, setNewListaMinCantidad] = useState(0);
+  const [editingLista, setEditingLista] = useState<ListaPrecio | null>(null);
+  const [clienteSearch, setClienteSearch] = useState('');
   const [currentUser, setCurrentUser] = useState<string | null>(null);
   const [currentUserData, setCurrentUserData] = useState<any>(null);
   const [loginUsername, setLoginUsername] = useState('');
@@ -272,6 +284,7 @@ function App() {
       setProductos(productosData);
       setFacturas(facturasData);
       setPagos(pagosData);
+      setListasPrecios(loadListasPrecios());
     };
 
     loadData();
@@ -339,10 +352,31 @@ function App() {
     [facturas]
   );
 
-  const findProductPrice = (product: Producto, categoria: 'general' | 'especial') =>
-    categoria === 'especial' && product.precioEsp ? product.precioEsp : product.precio;
+  const todasLasListas = useMemo(
+    () => [...LISTAS_BUILTIN, ...listasPrecios],
+    [listasPrecios]
+  );
+
+  const getListaById = (id: string): ListaPrecio =>
+    todasLasListas.find(l => l.id === id) ?? LISTAS_BUILTIN[0];
+
+  const findProductPrice = (product: Producto, lista: ListaPrecio, totalCant?: number): number => {
+    if (lista.id === 'especial' && product.precioEsp) return product.precioEsp;
+    if (lista.descuento > 0) {
+      const cantOk = lista.minCantidad === 0 || (totalCant !== undefined && totalCant >= lista.minCantidad);
+      if (cantOk) return Math.round(product.precio * (1 - lista.descuento / 100));
+    }
+    return product.precio;
+  };
+
+  const totalRowsCant = useMemo(
+    () => rows.reduce((sum, row) => sum + (row.cant || 0), 0),
+    [rows]
+  );
 
   const updateRowProduct = (rowKey: string, product: Producto) => {
+    const lista = getListaById(invoiceClienteActual?.cat ?? 'general');
+    const currentTotal = rows.reduce((sum, r) => sum + (r.rowKey !== rowKey ? r.cant : 1), 0);
     setRows((rows) =>
       rows.map((row) =>
         row.rowKey !== rowKey
@@ -354,34 +388,48 @@ function App() {
               categoria: product.categoria,
               talle: product.talle,
               color: product.color,
-              precio: findProductPrice(product, invoiceClienteActual?.cat ?? 'general'),
-              query: '', // Limpiar la búsqueda
+              precio: findProductPrice(product, lista, currentTotal),
+              query: '',
             }
       )
     );
-
-    // Forzar re-render inmediato para ocultar dropdown
-    setTimeout(() => {
-      // Forzar un re-render para asegurar que el dropdown se oculte
-      setRows((prevRows) => [...prevRows]);
-    }, 10);
+    setTimeout(() => setRows((prevRows) => [...prevRows]), 10);
   };
 
   const updateClientPrices = (clienteId: string) => {
     const client = clientes.find((item) => item.id === clienteId);
     if (!client) return;
+    const lista = getListaById(client.cat);
+    const total = rows.reduce((sum, r) => sum + r.cant, 0);
     setRows((rows) =>
       rows.map((row) => {
         if (!row.prodId) return row;
         const product = productos.find((item) => item.id === row.prodId);
         if (!product) return row;
-        return { ...row, precio: findProductPrice(product, client.cat) };
+        return { ...row, precio: findProductPrice(product, lista, total) };
       })
     );
   };
 
+  // Recalcular precios cuando cambia la cantidad total (para listas con minCantidad)
+  useEffect(() => {
+    if (!invoiceClienteActual) return;
+    const lista = getListaById(invoiceClienteActual.cat);
+    if (lista.minCantidad === 0) return; // Solo si hay condición de cantidad
+    setRows((rows) =>
+      rows.map((row) => {
+        if (!row.prodId) return row;
+        const product = productos.find((p) => p.id === row.prodId);
+        if (!product) return row;
+        return { ...row, precio: findProductPrice(product, lista, totalRowsCant) };
+      })
+    );
+  }, [totalRowsCant, invoiceClienteActual?.cat]);
+
   const handleInvoiceClientChange = (value: string) => {
     setInvoiceClient(value);
+    setInvoiceClientSearch('');
+    setInvoiceClientDropdownOpen(false);
     updateClientPrices(value);
   };
 
@@ -423,13 +471,15 @@ function App() {
     const items = rows.filter((row) => row.prodId && row.cant > 0);
     if (!items.length) return;
     const factura: Factura = {
-      id: `f${Date.now()}`,
+      id: editingFactura ? editingFactura.id : `f${Date.now()}`,
       clienteId: invoiceClienteActual.id,
       fecha: invoiceDate,
       items,
       total: items.reduce((sum, item) => sum + item.precio * item.cant, 0),
     };
-    const nextFacturas = [factura, ...facturas];
+    const nextFacturas = editingFactura
+      ? facturas.map(f => f.id === factura.id ? factura : f)
+      : [factura, ...facturas];
     setFacturas(nextFacturas);
     await saveFacturas(nextFacturas);
 
@@ -472,7 +522,8 @@ ${productosDetalle}
       { rowKey: 'r0', prodId: '', nombre: '', categoria: '', talle: '', color: '', cant: 1, precio: 0, query: '' },
     ]);
     setInvoiceDate(today);
-    success('Factura creada exitosamente');
+    setEditingFactura(null);
+    success(editingFactura ? 'Factura actualizada exitosamente' : 'Factura creada exitosamente');
     setPage('historial');
   };
 
@@ -663,6 +714,33 @@ ${productosDetalle}
     if (invoiceClient === clientId && nextClientes.length > 0) {
       setInvoiceClient(nextClientes[0].id);
     }
+  };
+
+  const handleDeleteFactura = async (facturaId: string) => {
+    const factura = facturas.find(f => f.id === facturaId);
+    if (!factura) return;
+    const cliente = clientes.find(c => c.id === factura.clienteId);
+    if (!window.confirm(`¿Eliminar esta factura de ${cliente?.nombre ?? 'cliente eliminado'} por ${formatMoney(factura.total)}?`)) return;
+
+    const nextFacturas = facturas.filter(f => f.id !== facturaId);
+    setFacturas(nextFacturas);
+    await saveFacturas(nextFacturas);
+
+    if (currentUser) {
+      const fechaHora = new Date().toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      await registrarAccion(currentUser, `🗑️ FACTURA ELIMINADA por ${currentUser}`, 'factura', facturaId,
+        `• Cliente: ${cliente?.nombre}\n• Total: ${formatMoney(factura.total)}\n• Fecha factura: ${factura.fecha}\n• Eliminada por: ${currentUser}\n• Fecha/Hora: ${fechaHora}`);
+    }
+    success('Factura eliminada correctamente');
+  };
+
+  const handleEditFactura = (factura: Factura) => {
+    setEditingFactura(factura);
+    const cliente = clientes.find(c => c.id === factura.clienteId);
+    if (cliente) setInvoiceClient(factura.clienteId);
+    setInvoiceDate(factura.fecha);
+    setRows(factura.items.map((item, i) => ({ ...item, rowKey: `r${i}`, query: '' })));
+    setPage('dashboard');
   };
 
   const handlePaymentSubmit = async () => {
@@ -1375,6 +1453,43 @@ ${productosDetalle}
     success('Sesión cerrada correctamente');
   };
 
+  const handleSaveLista = () => {
+    if (!newListaNombre.trim()) { error('El nombre de la lista es obligatorio'); return; }
+    if (newListaDescuento < 0 || newListaDescuento >= 100) { error('El descuento debe estar entre 0 y 99%'); return; }
+    let nextListas: ListaPrecio[];
+    if (editingLista) {
+      nextListas = listasPrecios.map(l => l.id === editingLista.id
+        ? { ...l, nombre: newListaNombre.trim(), descuento: newListaDescuento, minCantidad: newListaMinCantidad }
+        : l);
+    } else {
+      const nueva: ListaPrecio = { id: `lp${Date.now()}`, nombre: newListaNombre.trim(), descuento: newListaDescuento, minCantidad: newListaMinCantidad };
+      nextListas = [...listasPrecios, nueva];
+    }
+    setListasPrecios(nextListas);
+    saveListasPrecios(nextListas);
+    setEditingLista(null);
+    setNewListaNombre('');
+    setNewListaDescuento(0);
+    setNewListaMinCantidad(0);
+    success(editingLista ? 'Lista actualizada' : 'Lista creada correctamente');
+  };
+
+  const handleDeleteLista = (id: string) => {
+    const lista = listasPrecios.find(l => l.id === id);
+    if (!lista) return;
+    const enUso = clientes.some(c => c.cat === id);
+    if (enUso) { error(`La lista "${lista.nombre}" está en uso por uno o más clientes`); return; }
+    if (!window.confirm(`¿Eliminar la lista "${lista.nombre}"?`)) return;
+    const nextListas = listasPrecios.filter(l => l.id !== id);
+    setListasPrecios(nextListas);
+    saveListasPrecios(nextListas);
+    success('Lista eliminada');
+  };
+
+  const clienteList = clientes.filter((c) =>
+    clienteSearch === '' || c.nombre.toLowerCase().includes(clienteSearch.toLowerCase())
+  );
+
   const productList = productos.filter((item) =>
     [item.nombre, item.categoria, item.talle, item.color].some((value) =>
       value.toLowerCase().includes(productFilter.toLowerCase())
@@ -1647,23 +1762,43 @@ ${productosDetalle}
               <div className="rounded-3xl bg-panel p-6 shadow-panel overflow-visible">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                   <div>
-                    <p className="text-sm text-textSecondary">Factura nueva</p>
-                    <h3 className="mt-1 text-2xl font-semibold">Completa la venta y actualiza la cuenta</h3>
+                    <p className="text-sm text-textSecondary">{editingFactura ? 'Editando factura' : 'Factura nueva'}</p>
+                    <h3 className="mt-1 text-2xl font-semibold">
+                      {editingFactura ? `Editar factura #${editingFactura.id.slice(-6).toUpperCase()}` : 'Completa la venta y actualiza la cuenta'}
+                    </h3>
                   </div>
+                  {editingFactura && (
+                    <button type="button" onClick={() => { setEditingFactura(null); setRows([{ rowKey: 'r0', prodId: '', nombre: '', categoria: '', talle: '', color: '', cant: 1, precio: 0, query: '' }]); setInvoiceDate(today); }} className="rounded-3xl bg-surface px-4 py-2 text-sm text-textPrimary ring-1 ring-border hover:bg-border">
+                      Cancelar edición
+                    </button>
+                  )}
                   <div className="grid gap-3 sm:grid-cols-2">
                     <label className="space-y-2 text-sm text-textSecondary">
                       Cliente
-                      <select
-                        value={invoiceClient}
-                        onChange={(e) => handleInvoiceClientChange(e.target.value)}
-                        className="w-full rounded-2xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
-                      >
-                        {clientes.map((cliente) => (
-                          <option key={cliente.id} value={cliente.id}>
-                            {cliente.nombre}
-                          </option>
-                        ))}
-                      </select>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={invoiceClientDropdownOpen ? invoiceClientSearch : (invoiceClienteActual?.nombre ?? '')}
+                          onChange={(e) => { setInvoiceClientSearch(e.target.value); setInvoiceClientDropdownOpen(true); }}
+                          onFocus={() => { setInvoiceClientSearch(''); setInvoiceClientDropdownOpen(true); }}
+                          onBlur={() => setTimeout(() => setInvoiceClientDropdownOpen(false), 150)}
+                          placeholder="Buscar cliente..."
+                          className="w-full rounded-2xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                        />
+                        {invoiceClientDropdownOpen && (
+                          <div className="absolute left-0 top-full z-50 mt-1 max-h-48 w-full overflow-auto rounded-2xl border border-border bg-panel shadow-xl">
+                            {clientes.filter(c => invoiceClientSearch === '' || c.nombre.toLowerCase().includes(invoiceClientSearch.toLowerCase())).map(c => (
+                              <button key={c.id} type="button"
+                                onMouseDown={() => handleInvoiceClientChange(c.id)}
+                                className="w-full px-4 py-2 text-left text-sm text-textPrimary hover:bg-surface border-b border-border last:border-b-0"
+                              >
+                                <span className="font-medium">{c.nombre}</span>
+                                <span className="ml-2 text-xs text-textSecondary">{getListaById(c.cat).nombre}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </label>
                     <label className="space-y-2 text-sm text-textSecondary">
                       Fecha
@@ -1724,6 +1859,11 @@ ${productosDetalle}
                               }`}
                               readOnly={!!row.prodId}
                             />
+                            {row.prodId && (
+                              <div className="mt-1 px-4 text-xs text-green-400">
+                                {row.categoria} • {row.talle} • {row.color}
+                              </div>
+                            )}
                             {matches.length > 0 && row.query && row.query.trim().length > 0 && !row.prodId && (
                               <div className="absolute left-0 top-full z-[60] mt-2 max-h-60 w-full overflow-auto rounded-3xl border border-border bg-panel shadow-2xl">
                                 {matches.slice(0, 6).map((product, index) => (
@@ -1785,6 +1925,23 @@ ${productosDetalle}
                     })}
                   </div>
                 </div>
+                {(() => {
+                  const lista = getListaById(invoiceClienteActual?.cat ?? 'general');
+                  if (lista.minCantidad > 0 && lista.descuento > 0) {
+                    const falta = Math.max(0, lista.minCantidad - totalRowsCant);
+                    return (
+                      <div className={`mt-4 rounded-2xl px-4 py-3 text-sm ${falta === 0 ? 'bg-green-900/20 text-green-300 border border-green-700' : 'bg-yellow-900/20 text-yellow-300 border border-yellow-700'}`}>
+                        {falta === 0
+                          ? `✓ Descuento ${lista.descuento}% aplicado (${totalRowsCant} unidades)`
+                          : `Descuento ${lista.descuento}% se activa con ${lista.minCantidad} unidades — faltan ${falta}`}
+                      </div>
+                    );
+                  }
+                  if (lista.descuento > 0) {
+                    return <div className="mt-4 rounded-2xl bg-green-900/20 border border-green-700 px-4 py-3 text-sm text-green-300">✓ Descuento {lista.descuento}% aplicado</div>;
+                  }
+                  return null;
+                })()}
                 <div className="mt-6 flex flex-col gap-4 rounded-3xl bg-surface p-5 sm:flex-row sm:items-center sm:justify-between">
                   <button
                     type="button"
@@ -1831,13 +1988,21 @@ ${productosDetalle}
                     Nuevo cliente
                   </button>
                 </div>
-                <div className="mt-6 overflow-hidden rounded-3xl border border-border">
+                <div className="mt-4">
+                  <input
+                    value={clienteSearch}
+                    onChange={(e) => setClienteSearch(e.target.value)}
+                    placeholder="Buscar cliente por nombre..."
+                    className="w-full rounded-2xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                  />
+                </div>
+                <div className="mt-4 overflow-hidden rounded-3xl border border-border">
                   <div className="overflow-x-auto">
                     <table className="w-full border-collapse text-sm min-w-[700px]">
                       <thead className="bg-surface text-textSecondary">
                         <tr>
                           <th className="px-3 py-4 text-left sm:px-5">Nombre</th>
-                          <th className="px-3 py-4 text-left sm:px-5 hidden sm:table-cell">Categoría</th>
+                          <th className="px-3 py-4 text-left sm:px-5 hidden sm:table-cell">Lista de precios</th>
                           <th className="px-3 py-4 text-left sm:px-5 hidden md:table-cell">Teléfono</th>
                           <th className="px-3 py-4 text-left sm:px-5">Saldo</th>
                           <th className="px-3 py-4 text-left sm:px-5 hidden lg:table-cell">Último pago</th>
@@ -1845,7 +2010,7 @@ ${productosDetalle}
                         </tr>
                       </thead>
                     <tbody>
-                      {clientes.map((cliente) => {
+                      {clienteList.map((cliente) => {
                         const clienteFacturas = facturas.filter((factura) => factura.clienteId === cliente.id);
                         const clientePagos = pagos.filter((p) => p.clienteId === cliente.id);
                         const total = clienteFacturas.reduce((sum, factura) => sum + factura.total, 0) - clientePagos.reduce((sum, pago) => sum + pago.monto, 0);
@@ -1862,10 +2027,10 @@ ${productosDetalle}
                               <div className="font-medium">{cliente.nombre}</div>
                               <div className="mt-1 text-xs text-textSecondary">{cliente.email}</div>
                               <div className="mt-1 text-xs text-textSecondary sm:hidden">
-                                {cliente.cat} • {cliente.tel}
+                                {getListaById(cliente.cat).nombre} • {cliente.tel}
                               </div>
                             </td>
-                            <td className="px-3 py-4 capitalize text-textSecondary sm:px-5 hidden sm:table-cell">{cliente.cat}</td>
+                            <td className="px-3 py-4 text-textSecondary sm:px-5 hidden sm:table-cell">{getListaById(cliente.cat).nombre}</td>
                             <td className="px-3 py-4 text-textSecondary sm:px-5 hidden md:table-cell">{cliente.tel}</td>
                             <td className="px-3 py-4 font-semibold sm:px-5">{formatMoney(total)}</td>
                             <td className="px-3 py-4 text-textSecondary sm:px-5 hidden lg:table-cell">{lastPago}</td>
@@ -2031,7 +2196,7 @@ ${productosDetalle}
                             </td>
                             <td className="px-5 py-4 font-semibold">{formatMoney(factura.total)}</td>
                             <td className="px-5 py-4">
-                              <div className="flex gap-2">
+                              <div className="flex flex-wrap gap-2">
                                 <button
                                   type="button"
                                   onClick={() => cliente && printInvoice(factura, cliente)}
@@ -2045,7 +2210,21 @@ ${productosDetalle}
                                   onClick={() => setSelectedInvoice(factura.id)}
                                   className="rounded-3xl bg-surface px-3 py-2 text-xs text-textPrimary transition hover:bg-border"
                                 >
-                                  👁️ Ver detalles
+                                  👁️ Ver
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleEditFactura(factura)}
+                                  className="rounded-3xl bg-amber-900/40 px-3 py-2 text-xs text-amber-300 transition hover:bg-amber-900"
+                                >
+                                  ✏️ Editar
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteFactura(factura.id)}
+                                  className="rounded-3xl bg-red-900/40 px-3 py-2 text-xs text-red-300 transition hover:bg-red-900"
+                                >
+                                  🗑️ Eliminar
                                 </button>
                               </div>
                             </td>
@@ -2093,14 +2272,19 @@ ${productosDetalle}
                     />
                   </label>
                   <label className="space-y-2 text-sm text-textSecondary">
-                    Categoría de precios
+                    Lista de precios
                     <select
                       value={newClientCat}
-                      onChange={(e) => setNewClientCat(e.target.value as 'general' | 'especial')}
+                      onChange={(e) => setNewClientCat(e.target.value)}
                       className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
                     >
-                      <option value="general">General</option>
-                      <option value="especial">Especial</option>
+                      <option value="general">General (precio base)</option>
+                      <option value="especial">Especial (precio especial del producto)</option>
+                      {listasPrecios.map(l => (
+                        <option key={l.id} value={l.id}>
+                          {l.nombre}{l.descuento > 0 ? ` (${l.descuento}% desc${l.minCantidad > 0 ? ` con ${l.minCantidad}+ unid.` : ''})` : ''}
+                        </option>
+                      ))}
                     </select>
                   </label>
                   <label className="lg:col-span-2 space-y-2 text-sm text-textSecondary">
@@ -2427,6 +2611,106 @@ ${productosDetalle}
                     </button>
                     {backupMessage && <p className="mt-3 text-sm text-emerald-600">{backupMessage}</p>}
                     {backupError && <p className="mt-3 text-sm text-red-600">{backupError}</p>}
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {page === 'listas-precios' && (
+            <section className="space-y-6">
+              <div className="rounded-3xl bg-panel p-6 shadow-panel">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <h3 className="text-2xl font-semibold">Listas de precios</h3>
+                    <p className="mt-1 text-sm text-textSecondary">Crea listas personalizadas con descuentos y asígnalas a clientes.</p>
+                  </div>
+                </div>
+
+                {/* Tabla de listas existentes */}
+                <div className="mt-6 overflow-hidden rounded-3xl border border-border">
+                  <table className="w-full border-collapse text-sm">
+                    <thead className="bg-surface text-textSecondary">
+                      <tr>
+                        <th className="px-5 py-4 text-left">Nombre</th>
+                        <th className="px-5 py-4 text-left">Descuento</th>
+                        <th className="px-5 py-4 text-left">Mínimo unidades</th>
+                        <th className="px-5 py-4 text-left">Clientes</th>
+                        <th className="px-5 py-4 text-left">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...LISTAS_BUILTIN, ...listasPrecios].map((lista) => {
+                        const isBuiltin = lista.id === 'general' || lista.id === 'especial';
+                        const cantClientes = clientes.filter(c => c.cat === lista.id).length;
+                        return (
+                          <tr key={lista.id} className="border-t border-border hover:bg-surface">
+                            <td className="px-5 py-4 font-medium">
+                              {lista.nombre}
+                              {isBuiltin && <span className="ml-2 text-xs text-textSecondary">(integrada)</span>}
+                            </td>
+                            <td className="px-5 py-4 text-textSecondary">{lista.descuento > 0 ? `${lista.descuento}%` : '—'}</td>
+                            <td className="px-5 py-4 text-textSecondary">{lista.minCantidad > 0 ? `${lista.minCantidad} unidades` : lista.descuento > 0 ? 'Siempre' : '—'}</td>
+                            <td className="px-5 py-4 text-textSecondary">{cantClientes}</td>
+                            <td className="px-5 py-4">
+                              {!isBuiltin && (
+                                <div className="flex gap-2">
+                                  <button type="button" onClick={() => { setEditingLista(lista); setNewListaNombre(lista.nombre); setNewListaDescuento(lista.descuento); setNewListaMinCantidad(lista.minCantidad); }}
+                                    className="rounded-3xl bg-amber-900/40 px-3 py-2 text-xs text-amber-300 hover:bg-amber-900">Editar</button>
+                                  <button type="button" onClick={() => handleDeleteLista(lista.id)}
+                                    className="rounded-3xl bg-red-900/40 px-3 py-2 text-xs text-red-300 hover:bg-red-900">Eliminar</button>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Formulario nueva lista */}
+                <div className="mt-8 rounded-3xl border border-border bg-surface p-6">
+                  <h4 className="text-lg font-semibold mb-4">{editingLista ? `Editando: ${editingLista.nombre}` : 'Nueva lista de precios'}</h4>
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    <label className="space-y-2 text-sm text-textSecondary">
+                      Nombre de la lista
+                      <input value={newListaNombre} onChange={(e) => setNewListaNombre(e.target.value)}
+                        placeholder="Ej: Cliente VIP"
+                        className="w-full rounded-3xl border border-border bg-panel px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent" />
+                    </label>
+                    <label className="space-y-2 text-sm text-textSecondary">
+                      Descuento sobre precio general (%)
+                      <input type="number" min={0} max={99} value={newListaDescuento || ''}
+                        onChange={(e) => setNewListaDescuento(Number(e.target.value))}
+                        placeholder="Ej: 10"
+                        className="w-full rounded-3xl border border-border bg-panel px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent" />
+                    </label>
+                    <label className="space-y-2 text-sm text-textSecondary">
+                      Unidades mínimas para aplicar descuento (0 = siempre)
+                      <input type="number" min={0} value={newListaMinCantidad || ''}
+                        onChange={(e) => setNewListaMinCantidad(Number(e.target.value))}
+                        placeholder="Ej: 20"
+                        className="w-full rounded-3xl border border-border bg-panel px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent" />
+                    </label>
+                  </div>
+                  {newListaDescuento > 0 && (
+                    <p className="mt-3 text-xs text-textSecondary">
+                      Vista previa: si el precio general es $1.000, el precio con esta lista será ${Math.round(1000 * (1 - newListaDescuento / 100)).toLocaleString('es-AR')}
+                      {newListaMinCantidad > 0 ? ` (solo si se compran ${newListaMinCantidad}+ unidades en total)` : ''}
+                    </p>
+                  )}
+                  <div className="mt-4 flex gap-3">
+                    <button type="button" onClick={handleSaveLista}
+                      className="rounded-3xl bg-accent px-6 py-3 text-sm font-semibold text-white hover:bg-indigo-600">
+                      {editingLista ? 'Actualizar lista' : 'Crear lista'}
+                    </button>
+                    {editingLista && (
+                      <button type="button" onClick={() => { setEditingLista(null); setNewListaNombre(''); setNewListaDescuento(0); setNewListaMinCantidad(0); }}
+                        className="rounded-3xl bg-panel px-6 py-3 text-sm font-semibold text-textPrimary ring-1 ring-border hover:bg-surface">
+                        Cancelar
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

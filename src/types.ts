@@ -1,12 +1,19 @@
 export type PrecioCategoria = 'general' | 'especial';
 export type FormaPago = 'Efectivo' | 'Transferencia' | 'Cheque' | 'Tarjeta';
 
+export interface ListaPrecio {
+  id: string;
+  nombre: string;
+  descuento: number;    // % descuento sobre precio general (0 = sin descuento)
+  minCantidad: number;  // cantidad mínima total en la factura para aplicar (0 = siempre)
+}
+
 export interface Cliente {
   id: string;
   nombre: string;
   tel: string;
   email: string;
-  cat: PrecioCategoria;
+  cat: string;          // ID de lista de precios ('general', 'especial', o ID custom)
   notas?: string;
 }
 
