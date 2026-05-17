@@ -644,7 +644,7 @@ export async function obtenerUsuariosPendientes() {
   }
 }
 
-export async function aprobarUsuario(userId: string, aprobadoPor: string) {
+export async function aprobarUsuario(username: string, aprobadoPor: string) {
   try {
     const { data, error } = await supabase
       .from('usuarios')
@@ -653,7 +653,7 @@ export async function aprobarUsuario(userId: string, aprobadoPor: string) {
         aprobado_por: aprobadoPor,
         updated_at: new Date().toISOString()
       })
-      .eq('id', userId)
+      .eq('username', username)
       .select()
       .single();
 
@@ -665,7 +665,7 @@ export async function aprobarUsuario(userId: string, aprobadoPor: string) {
   }
 }
 
-export async function rechazarUsuario(userId: string, aprobadoPor: string) {
+export async function rechazarUsuario(username: string, aprobadoPor: string) {
   try {
     const { data, error } = await supabase
       .from('usuarios')
@@ -674,7 +674,7 @@ export async function rechazarUsuario(userId: string, aprobadoPor: string) {
         aprobado_por: aprobadoPor,
         updated_at: new Date().toISOString()
       })
-      .eq('id', userId)
+      .eq('username', username)
       .select()
       .single();
 

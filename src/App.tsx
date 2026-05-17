@@ -1070,43 +1070,43 @@ function App() {
     }
   };
 
-  const handleAprobarUsuario = async (userId: string) => {
+  const handleAprobarUsuario = async (username: string) => {
     try {
-      const usuarioPendiente = usuariosPendientes.find(u => u.id === userId);
-      await aprobarUsuario(userId, currentUserData.username);
+      const usuarioPendiente = usuariosPendientes.find(u => u.username === username);
+      await aprobarUsuario(username, currentUserData.username);
       await loadUsuariosPendientes();
 
       if (currentUserData && usuarioPendiente) {
         const antes = { username: usuarioPendiente.username, email: usuarioPendiente.email, estado: 'pendiente' };
         const despues = { username: usuarioPendiente.username, email: usuarioPendiente.email, estado: 'aprobado', aprobadoPor: currentUserData.username };
-        await logAudit(currentUserData.username, 'USUARIO_APROBADO', 'cliente', userId, antes, despues);
+        await logAudit(currentUserData.username, 'USUARIO_APROBADO', 'cliente', undefined, antes, despues);
       }
 
-      success(`✅ USUARIO APROBADO: ${usuarioPendiente?.username || 'Usuario'} puede acceder al sistema`);
+      success(`Usuario ${username} aprobado. Ya puede acceder al sistema.`);
     } catch (err: any) {
-      error(`❌ ERROR: ${err.message || 'No se pudo aprobar el usuario. Intenta nuevamente.'}`);
+      error(`No se pudo aprobar el usuario: ${err.message || 'Intenta nuevamente.'}`);
     }
   };
 
-  const handleRechazarUsuario = async (userId: string) => {
+  const handleRechazarUsuario = async (username: string) => {
     try {
-      const usuarioPendiente = usuariosPendientes.find(u => u.id === userId);
-      if (!window.confirm(`¿Estás seguro de rechazar el registro de "${usuarioPendiente?.username || 'este usuario'}"?\n\nEsta acción no se puede deshacer.`)) {
+      const usuarioPendiente = usuariosPendientes.find(u => u.username === username);
+      if (!window.confirm(`¿Rechazar el registro de "${username}"?\n\nEsta acción no se puede deshacer.`)) {
         return;
       }
 
-      await rechazarUsuario(userId, currentUserData.username);
+      await rechazarUsuario(username, currentUserData.username);
       await loadUsuariosPendientes();
 
       if (currentUserData && usuarioPendiente) {
         const antes = { username: usuarioPendiente.username, email: usuarioPendiente.email, estado: 'pendiente' };
         const despues = { username: usuarioPendiente.username, email: usuarioPendiente.email, estado: 'rechazado', rechazadoPor: currentUserData.username };
-        await logAudit(currentUserData.username, 'USUARIO_RECHAZADO', 'cliente', userId, antes, despues);
+        await logAudit(currentUserData.username, 'USUARIO_RECHAZADO', 'cliente', undefined, antes, despues);
       }
 
-      success(`❌ USUARIO RECHAZADO: ${usuarioPendiente?.username || 'Usuario'} fue denegado el acceso`);
+      success(`Registro de ${username} rechazado.`);
     } catch (err: any) {
-      error(`❌ ERROR: ${err.message || 'No se pudo rechazar el usuario. Intenta nuevamente.'}`);
+      error(`No se pudo rechazar el usuario: ${err.message || 'Intenta nuevamente.'}`);
     }
   };
 
@@ -2225,14 +2225,14 @@ function App() {
                             <div className="flex gap-3">
                               <button
                                 type="button"
-                                onClick={() => handleAprobarUsuario(usuario.id)}
+                                onClick={() => handleAprobarUsuario(usuario.username)}
                                 className="rounded-3xl bg-green-700 px-4 py-2 text-sm font-semibold text-green-100 transition hover:bg-green-600"
                               >
                                 ✅ Aprobar
                               </button>
                               <button
                                 type="button"
-                                onClick={() => handleRechazarUsuario(usuario.id)}
+                                onClick={() => handleRechazarUsuario(usuario.username)}
                                 className="rounded-3xl bg-red-700 px-4 py-2 text-sm font-semibold text-red-100 transition hover:bg-red-600"
                               >
                                 ❌ Rechazar
