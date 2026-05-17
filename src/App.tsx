@@ -54,8 +54,8 @@ const printInvoice = (factura: Factura, cliente: Cliente) => {
       <style>
         body { font-family: Arial, sans-serif; margin: 20px; background: white; color: black; }
         .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 20px; margin-bottom: 30px; }
-        .company-name { font-size: 24px; font-weight: bold; margin-bottom: 10px; }
-        .invoice-title { font-size: 18px; color: #666; }
+        .logo { display: block; max-width: 200px; height: auto; margin: 0 auto 16px; image-rendering: -webkit-optimize-contrast; image-rendering: crisp-edges; }
+        .company-name { font-size: 22px; font-weight: bold; }
         .invoice-details { display: flex; justify-content: space-between; margin-bottom: 30px; }
         .client-info, .invoice-info { width: 48%; }
         .section-title { font-weight: bold; font-size: 14px; margin-bottom: 10px; color: #333; }
@@ -69,13 +69,14 @@ const printInvoice = (factura: Factura, cliente: Cliente) => {
         @media print {
           body { margin: 0; }
           .no-print { display: none; }
+          .logo { max-width: 200px; }
         }
       </style>
     </head>
     <body>
       <div class="header">
-        <div class="company-name">CUENTA CORRIENTE MAYORISTA</div>
-        <div class="invoice-title">Comprobante de Factura</div>
+        <img src="https://i.imgur.com/M4GONM5.png" alt="Logo" class="logo" />
+        <div class="company-name">Comprobante de venta</div>
       </div>
 
       <div class="invoice-details">
