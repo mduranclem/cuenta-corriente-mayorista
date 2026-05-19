@@ -588,7 +588,7 @@ function App() {
   const handleGuardarPresupuesto = async () => {
     if (!invoiceClienteActual) return;
     const items = rows.filter((row) => row.prodId && row.cant > 0);
-    if (!items.length) return;
+    if (!items.length) { error('Agregá al menos un producto'); return; }
     const presupuesto: Presupuesto = {
       id: `pres${Date.now()}`,
       clienteId: invoiceClienteActual.id,
@@ -598,7 +598,12 @@ function App() {
       notas: invoiceNotas.trim() || undefined,
       estado: 'presupuesto',
     };
-    await savePresupuesto(presupuesto);
+    try {
+      await savePresupuesto(presupuesto);
+    } catch (err: any) {
+      error(`Error guardando presupuesto: ${err?.message || 'Verificá que ejecutaste el SQL en Supabase'}`);
+      return;
+    }
     setPresupuestos(prev => [presupuesto, ...prev]);
     setRows([{ rowKey: 'r0', prodId: '', nombre: '', categoria: '', talle: '', color: '', cant: 1, precio: 0, query: '' }]);
     setInvoiceDate(today);
