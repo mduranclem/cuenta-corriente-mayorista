@@ -644,13 +644,30 @@ export async function obtenerUsuariosPendientes() {
   }
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+async function resolverUUID(usernameOrUuid: string): Promise<string | null> {
+  if (UUID_REGEX.test(usernameOrUuid)) return usernameOrUuid;
+  try {
+    const { data } = await supabase
+      .from('usuarios')
+      .select('id')
+      .eq('username', usernameOrUuid)
+      .single();
+    return data?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function aprobarUsuario(username: string, aprobadoPor: string) {
   try {
+    const aprobadoPorId = await resolverUUID(aprobadoPor);
     const { data, error } = await supabase
       .from('usuarios')
       .update({
         estado: 'aprobado',
-        aprobado_por: aprobadoPor,
+        ...(aprobadoPorId ? { aprobado_por: aprobadoPorId } : {}),
         updated_at: new Date().toISOString()
       })
       .eq('username', username)
@@ -667,11 +684,12 @@ export async function aprobarUsuario(username: string, aprobadoPor: string) {
 
 export async function rechazarUsuario(username: string, aprobadoPor: string) {
   try {
+    const aprobadoPorId = await resolverUUID(aprobadoPor);
     const { data, error } = await supabase
       .from('usuarios')
       .update({
         estado: 'rechazado',
-        aprobado_por: aprobadoPor,
+        ...(aprobadoPorId ? { aprobado_por: aprobadoPorId } : {}),
         updated_at: new Date().toISOString()
       })
       .eq('username', username)
