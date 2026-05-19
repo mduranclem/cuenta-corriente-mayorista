@@ -250,6 +250,8 @@ function App() {
   const [exportPreciosLista, setExportPreciosLista] = useState('');
   const [reporteDesde, setReporteDesde] = useState('');
   const [reporteHasta, setReporteHasta] = useState('');
+  const [reporteDesdeAplicado, setReporteDesdeAplicado] = useState('');
+  const [reporteHastaAplicado, setReporteHastaAplicado] = useState('');
   const [rankingTab, setRankingTab] = useState<'volumen' | 'deuda'>('volumen');
 
   // Verificar primer admin al cargar
@@ -1375,11 +1377,11 @@ function App() {
 
   const facturasFiltradas = useMemo(() => {
     return facturas.filter(f => {
-      if (reporteDesde && f.fecha < reporteDesde) return false;
-      if (reporteHasta && f.fecha > reporteHasta) return false;
+      if (reporteDesdeAplicado && f.fecha < reporteDesdeAplicado) return false;
+      if (reporteHastaAplicado && f.fecha > reporteHastaAplicado) return false;
       return true;
     });
-  }, [facturas, reporteDesde, reporteHasta]);
+  }, [facturas, reporteDesdeAplicado, reporteHastaAplicado]);
 
   const reporteVentasPorMes = useMemo(() => {
     const map: Record<string, number> = {};
@@ -2982,7 +2984,7 @@ function App() {
             <section className="space-y-6">
               <div className="rounded-3xl bg-panel p-6 shadow-panel">
                 <h3 className="text-2xl font-semibold mb-4">Reportes de ventas</h3>
-                <div className="flex gap-4 flex-wrap">
+                <div className="flex gap-4 flex-wrap items-end">
                   <div>
                     <label className="block text-xs text-textSecondary mb-1">Desde</label>
                     <input type="date" value={reporteDesde} onChange={e => setReporteDesde(e.target.value)}
@@ -2993,6 +2995,29 @@ function App() {
                     <input type="date" value={reporteHasta} onChange={e => setReporteHasta(e.target.value)}
                       className="rounded-2xl border border-border bg-surface px-4 py-2 text-sm text-textPrimary outline-none focus:border-accent" />
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => { setReporteDesdeAplicado(reporteDesde); setReporteHastaAplicado(reporteHasta); }}
+                    className="rounded-2xl bg-accent px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-600 transition"
+                  >
+                    Buscar
+                  </button>
+                  {(reporteDesdeAplicado || reporteHastaAplicado) && (
+                    <button
+                      type="button"
+                      onClick={() => { setReporteDesde(''); setReporteHasta(''); setReporteDesdeAplicado(''); setReporteHastaAplicado(''); }}
+                      className="rounded-2xl border border-border bg-surface px-5 py-2 text-sm text-textSecondary hover:bg-border transition"
+                    >
+                      Limpiar
+                    </button>
+                  )}
+                  {reporteDesdeAplicado || reporteHastaAplicado ? (
+                    <p className="text-xs text-textSecondary self-end pb-2">
+                      Mostrando: {reporteDesdeAplicado || '...'} → {reporteHastaAplicado || '...'}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-textSecondary self-end pb-2">Mostrando todas las facturas</p>
+                  )}
                 </div>
               </div>
 
