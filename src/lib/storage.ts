@@ -1,4 +1,4 @@
-import type { Cliente, Factura, ListaPrecio, Pago, ProductPrice, Producto } from '../types';
+import type { Cliente, Factura, ListaPrecio, Pago, ProductPrice, Producto, Presupuesto } from '../types';
 import { supabase } from './supabase';
 
 export interface BackupPayload {
@@ -127,6 +127,7 @@ function facturaToDatabase(factura: Factura) {
     cliente_id: factura.clienteId,
     fecha: factura.fecha,
     total: factura.total,
+    notas: factura.notas || null,
   };
 }
 
@@ -136,6 +137,7 @@ function databaseToFactura(facturaRow: any, items: any[]): Factura {
     clienteId: facturaRow.cliente_id,
     fecha: facturaRow.fecha,
     total: parseFloat(facturaRow.total),
+    notas: facturaRow.notas || '',
     items: items.map(item => ({
       prodId: item.prod_id,
       nombre: item.nombre,
@@ -749,6 +751,84 @@ export async function rechazarUsuario(username: string, aprobadoPor: string) {
     console.error('Error rechazando usuario:', error);
     throw error;
   }
+}
+
+// Funciones de presupuestos
+export async function loadPresupuestos(): Promise<Presupuesto[]> {
+  try {
+    const { data: presData, error: presError } = await supabase
+      .from('presupuestos')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (presError) throw presError;
+    if (!presData || presData.length === 0) return [];
+
+    const { data: itemsData, error: itemsError } = await supabase
+      .from('presupuesto_items')
+      .select('*');
+    if (itemsError) throw itemsError;
+
+    const itemsByPres = (itemsData || []).reduce((acc: any, item: any) => {
+      if (!acc[item.presupuesto_id]) acc[item.presupuesto_id] = [];
+      acc[item.presupuesto_id].push(item);
+      return acc;
+    }, {});
+
+    return presData.map(p => ({
+      id: p.id,
+      clienteId: p.cliente_id,
+      fecha: p.fecha,
+      total: parseFloat(p.total),
+      notas: p.notas || '',
+      estado: 'presupuesto' as const,
+      items: (itemsByPres[p.id] || []).map((item: any) => ({
+        prodId: item.prod_id,
+        nombre: item.nombre,
+        categoria: item.categoria,
+        talle: item.talle,
+        color: item.color,
+        cant: item.cant,
+        precio: parseFloat(item.precio),
+      })),
+    }));
+  } catch (error) {
+    console.error('Error loading presupuestos:', error);
+    return [];
+  }
+}
+
+export async function savePresupuesto(p: Presupuesto): Promise<void> {
+  const { error: pError } = await supabase.from('presupuestos').upsert({
+    id: p.id,
+    cliente_id: p.clienteId,
+    fecha: p.fecha,
+    total: p.total,
+    notas: p.notas || null,
+    estado: p.estado,
+  });
+  if (pError) throw pError;
+
+  await supabase.from('presupuesto_items').delete().eq('presupuesto_id', p.id);
+  if (p.items.length > 0) {
+    const { error: iError } = await supabase.from('presupuesto_items').insert(
+      p.items.map(item => ({
+        presupuesto_id: p.id,
+        prod_id: item.prodId,
+        nombre: item.nombre,
+        categoria: item.categoria,
+        talle: item.talle,
+        color: item.color,
+        cant: item.cant,
+        precio: item.precio,
+      }))
+    );
+    if (iError) throw iError;
+  }
+}
+
+export async function deletePresupuesto(id: string): Promise<void> {
+  const { error } = await supabase.from('presupuestos').delete().eq('id', id);
+  if (error) throw error;
 }
 
 export async function verificarPrimerAdmin(): Promise<boolean> {

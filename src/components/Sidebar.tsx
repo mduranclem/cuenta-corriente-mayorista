@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-type SidebarPage = 'inicio' | 'dashboard' | 'clientes' | 'cuenta' | 'historial' | 'nuevo-cliente' | 'productos' | 'backup' | 'admin' | 'listas-precios' | 'auditoria';
+type SidebarPage = 'inicio' | 'dashboard' | 'clientes' | 'cuenta' | 'historial' | 'nuevo-cliente' | 'productos' | 'backup' | 'admin' | 'listas-precios' | 'auditoria' | 'presupuestos' | 'reportes';
 
 interface SidebarItem {
   id: SidebarPage;
@@ -11,6 +11,7 @@ interface SidebarItem {
 const mainItems: SidebarItem[] = [
   { id: 'inicio',         label: 'Inicio',           icon: <span className="text-lg">🏠</span> },
   { id: 'dashboard',      label: 'Nueva factura',    icon: <span className="text-lg">🧾</span> },
+  { id: 'presupuestos',   label: 'Presupuestos',     icon: <span className="text-lg">📋</span> },
   { id: 'clientes',       label: 'Clientes',         icon: <span className="text-lg">👥</span> },
   { id: 'historial',      label: 'Historial',        icon: <span className="text-lg">📜</span> },
   { id: 'productos',      label: 'Productos',        icon: <span className="text-lg">🧵</span> },
@@ -18,6 +19,7 @@ const mainItems: SidebarItem[] = [
 ];
 
 const secondaryItems: SidebarItem[] = [
+  { id: 'reportes',  label: 'Reportes',        icon: <span className="text-lg">📊</span> },
   { id: 'admin',     label: 'Administración', icon: <span className="text-lg">⚙️</span> },
   { id: 'auditoria', label: 'Auditoría',       icon: <span className="text-lg">🛡️</span> },
   { id: 'backup',    label: 'Respaldo',        icon: <span className="text-lg">💾</span> },
@@ -64,7 +66,7 @@ export function Sidebar({ active, onSelect, currentUserData }: SidebarProps) {
         </nav>
         <div className="mt-6 border-t border-border pt-4 space-y-1">
           {secondaryItems
-            .filter(item => item.id !== 'admin' || isAdmin)
+            .filter(item => (item.id !== 'admin' && item.id !== 'reportes') || isAdmin)
             .map((item) => (
               <NavButton key={item.id} item={item} active={active} onSelect={handleSelect} />
             ))}

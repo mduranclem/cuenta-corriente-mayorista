@@ -47,6 +47,17 @@ export interface Factura {
   fecha: string;
   items: FacturaItem[];
   total: number;
+  notas?: string;
+}
+
+export interface Presupuesto {
+  id: string;
+  clienteId: string;
+  fecha: string;
+  items: FacturaItem[];
+  total: number;
+  notas?: string;
+  estado: 'presupuesto';
 }
 
 export interface Pago {

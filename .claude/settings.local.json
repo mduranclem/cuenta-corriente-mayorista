@@ -1,9 +1,25 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git commit -m \"$(cat <<''EOF''\nFix: Hacer auditoría visible para todos los usuarios\n\n🔧 PROBLEMA RESUELTO:\n- La auditoría estaba oculta para usuarios no-admin\n- Solo aparecía el menú \"Administración\" para rol admin\n\n✅ SOLUCIÓN:\n- Cambiar \"Administración\" → \"Auditoría\" (más claro)\n- Cambiar ícono 👑 → 📋 (más apropiado)\n- Eliminar filtro de rol: mostrar auditoría para todos\n- Auditoría ahora visible para cualquier usuario logueado\n\n🎯 RESULTADO:\n- Opción \"📋 Auditoría\" visible en sidebar para todos\n- Acceso a logs de actividad del sistema\n- Transparencia total de operaciones\n\n🤖 Generated with [Claude Code](https://claude.ai/code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")"
+      "Bash(git commit -m \"$(cat <<''EOF''\nFix: Hacer auditoría visible para todos los usuarios\n\n🔧 PROBLEMA RESUELTO:\n- La auditoría estaba oculta para usuarios no-admin\n- Solo aparecía el menú \"Administración\" para rol admin\n\n✅ SOLUCIÓN:\n- Cambiar \"Administración\" → \"Auditoría\" (más claro)\n- Cambiar ícono 👑 → 📋 (más apropiado)\n- Eliminar filtro de rol: mostrar auditoría para todos\n- Auditoría ahora visible para cualquier usuario logueado\n\n🎯 RESULTADO:\n- Opción \"📋 Auditoría\" visible en sidebar para todos\n- Acceso a logs de actividad del sistema\n- Transparencia total de operaciones\n\n🤖 Generated with [Claude Code](https://claude.ai/code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(npx tsc *)",
+      "Bash(npm run *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(dir *)",
+      "Bash(curl *)",
+      "Bash(git *)",
+      "PowerShell(\\(Get-Content \"C:\\\\Users\\\\USER\\\\Documents\\\\n8n.strong\\\\SISTEMA.MAMA\\\\src\\\\App.tsx\" | Measure-Object -Line\\).Lines)",
+      "Bash(npx vite *)",
+      "Bash(xargs grep -l \"supabase\")",
+      "Bash(npm install *)"
     ],
     "deny": [],
     "ask": []
-  }
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "n8n-mcp"
+  ]
 }

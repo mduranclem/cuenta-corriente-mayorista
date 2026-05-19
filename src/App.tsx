@@ -3,8 +3,12 @@ import { Sidebar } from './components/Sidebar';
 import { Modal } from './components/Modal';
 import { Toast } from './components/Toast';
 import { useToast } from './hooks/useToast';
-import type { Cliente, Factura, FacturaItem, FormaPago, ListaPrecio, Pago, ProductPrice, Producto } from './types';
+import type { Cliente, Factura, FacturaItem, FormaPago, ListaPrecio, Pago, ProductPrice, Producto, Presupuesto } from './types';
 import type { BackupPayload } from './lib/storage';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import {
   exportBackup,
   importBackup,
@@ -30,9 +34,12 @@ import {
   obtenerUsuariosPendientes,
   aprobarUsuario,
   rechazarUsuario,
+  loadPresupuestos,
+  savePresupuesto,
+  deletePresupuesto,
 } from './lib/storage';
 
-type Page = 'inicio' | 'dashboard' | 'clientes' | 'cuenta' | 'historial' | 'nuevo-cliente' | 'productos' | 'backup' | 'login' | 'admin' | 'listas-precios' | 'auditoria';
+type Page = 'inicio' | 'dashboard' | 'clientes' | 'cuenta' | 'historial' | 'nuevo-cliente' | 'productos' | 'backup' | 'login' | 'admin' | 'listas-precios' | 'auditoria' | 'presupuestos' | 'reportes';
 
 interface RowFactura extends FacturaItem {
   query: string;
@@ -47,7 +54,7 @@ const formasPago: FormaPago[] = ['Efectivo', 'Transferencia', 'Cheque', 'Tarjeta
 const formatNumberInput = (value: number) => value === 0 ? '' : value.toString();
 
 // Función para imprimir factura
-const printInvoice = (factura: Factura, cliente: Cliente) => {
+const printInvoice = (factura: Factura, cliente: Cliente, sena?: number) => {
   const printContent = `
     <!DOCTYPE html>
     <html>
@@ -122,8 +129,19 @@ const printInvoice = (factura: Factura, cliente: Cliente) => {
             <td colspan="4" class="text-right"><strong>TOTAL GENERAL</strong></td>
             <td class="text-right"><strong>${formatMoney(factura.total)}</strong></td>
           </tr>
+          ${sena && sena > 0 ? `
+          <tr>
+            <td colspan="4" class="text-right">Seña recibida</td>
+            <td class="text-right" style="color: green;">- ${formatMoney(sena)}</td>
+          </tr>
+          <tr class="total-row">
+            <td colspan="4" class="text-right"><strong>SALDO PENDIENTE</strong></td>
+            <td class="text-right" style="color: red;"><strong>${formatMoney(factura.total - sena)}</strong></td>
+          </tr>` : ''}
         </tbody>
       </table>
+
+      ${factura.notas ? `<div style="margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px;"><strong>Notas:</strong> ${factura.notas}</div>` : ''}
 
       <div class="footer">
         <p>Comprobante generado el ${new Date().toLocaleDateString('es-AR')} a las ${new Date().toLocaleTimeString('es-AR')}</p>
@@ -222,6 +240,16 @@ function App() {
   const [auditExpandedId, setAuditExpandedId] = useState<string | null>(null);
   const [resumenDeudaOpen, setResumenDeudaOpen] = useState(false);
   const [resumenPagoDetalle, setResumenPagoDetalle] = useState<Pago | null>(null);
+  const [invoiceNotas, setInvoiceNotas] = useState('');
+  const [invoiceSena, setInvoiceSena] = useState(0);
+  const [invoiceSenaForma, setInvoiceSenaForma] = useState<FormaPago>('Efectivo');
+  const [presupuestos, setPresupuestos] = useState<Presupuesto[]>([]);
+  const [exportDeudoresModalOpen, setExportDeudoresModalOpen] = useState(false);
+  const [exportPreciosModalOpen, setExportPreciosModalOpen] = useState(false);
+  const [exportPreciosLista, setExportPreciosLista] = useState('');
+  const [reporteDesde, setReporteDesde] = useState('');
+  const [reporteHasta, setReporteHasta] = useState('');
+  const [rankingTab, setRankingTab] = useState<'volumen' | 'deuda'>('volumen');
 
   // Verificar primer admin al cargar
   useEffect(() => {
@@ -312,13 +340,14 @@ function App() {
     if (!currentUser) return;
 
     const loadData = async () => {
-      const [clientesData, productosData, facturasData, pagosData, listasData, pricesData] = await Promise.all([
+      const [clientesData, productosData, facturasData, pagosData, listasData, pricesData, presupuestosData] = await Promise.all([
         loadClientes(),
         loadProductos(),
         loadFacturas(),
         loadPagos(),
         loadListasPrecios(),
         loadProductPrices(),
+        loadPresupuestos(),
       ]);
 
       setClientes(clientesData);
@@ -327,6 +356,7 @@ function App() {
       setPagos(pagosData);
       setListasPrecios(listasData);
       setProductPrices(pricesData);
+      setPresupuestos(presupuestosData);
     };
 
     loadData();
@@ -511,12 +541,28 @@ function App() {
       fecha: invoiceDate,
       items,
       total: items.reduce((sum, item) => sum + item.precio * item.cant, 0),
+      notas: invoiceNotas.trim() || undefined,
     };
     const nextFacturas = editingFactura
       ? facturas.map(f => f.id === factura.id ? factura : f)
       : [factura, ...facturas];
     setFacturas(nextFacturas);
     await saveFacturas(nextFacturas);
+
+    // Registrar seña si hay monto
+    if (invoiceSena > 0 && !editingFactura) {
+      const pago: import('./types').Pago = {
+        id: `p${Date.now()}`,
+        clienteId: invoiceClienteActual.id,
+        fecha: invoiceDate,
+        monto: invoiceSena,
+        forma: invoiceSenaForma,
+        notas: `Seña factura #${factura.id.slice(-8).toUpperCase()}`,
+      };
+      const nextPagos = [pago, ...pagos];
+      setPagos(nextPagos);
+      await savePagos(nextPagos);
+    }
 
     if (currentUser) {
       const accion = editingFactura ? 'FACTURA_EDITADA' : 'FACTURA_CREADA';
@@ -531,9 +577,171 @@ function App() {
       { rowKey: 'r0', prodId: '', nombre: '', categoria: '', talle: '', color: '', cant: 1, precio: 0, query: '' },
     ]);
     setInvoiceDate(today);
+    setInvoiceNotas('');
+    setInvoiceSena(0);
+    setInvoiceSenaForma('Efectivo');
     setEditingFactura(null);
     success(editingFactura ? 'Factura actualizada exitosamente' : 'Factura creada exitosamente');
     setPage('historial');
+  };
+
+  const handleGuardarPresupuesto = async () => {
+    if (!invoiceClienteActual) return;
+    const items = rows.filter((row) => row.prodId && row.cant > 0);
+    if (!items.length) return;
+    const presupuesto: Presupuesto = {
+      id: `pres${Date.now()}`,
+      clienteId: invoiceClienteActual.id,
+      fecha: invoiceDate,
+      items,
+      total: items.reduce((sum, item) => sum + item.precio * item.cant, 0),
+      notas: invoiceNotas.trim() || undefined,
+      estado: 'presupuesto',
+    };
+    await savePresupuesto(presupuesto);
+    setPresupuestos(prev => [presupuesto, ...prev]);
+    setRows([{ rowKey: 'r0', prodId: '', nombre: '', categoria: '', talle: '', color: '', cant: 1, precio: 0, query: '' }]);
+    setInvoiceDate(today);
+    setInvoiceNotas('');
+    setInvoiceSena(0);
+    success('Presupuesto guardado');
+    setPage('presupuestos');
+  };
+
+  const handleConvertirPresupuesto = async (pres: Presupuesto) => {
+    const factura: Factura = {
+      id: `f${Date.now()}`,
+      clienteId: pres.clienteId,
+      fecha: pres.fecha,
+      items: pres.items,
+      total: pres.total,
+      notas: pres.notas,
+    };
+    const nextFacturas = [factura, ...facturas];
+    setFacturas(nextFacturas);
+    await saveFacturas(nextFacturas);
+    await deletePresupuesto(pres.id);
+    setPresupuestos(prev => prev.filter(p => p.id !== pres.id));
+    success('Presupuesto convertido en factura');
+  };
+
+  const enviarWhatsAppResumen = (cliente: Cliente) => {
+    if (!cliente.tel) {
+      error('Este cliente no tiene teléfono registrado');
+      return;
+    }
+    const clienteFacts = facturas.filter(f => f.clienteId === cliente.id).sort((a, b) => b.fecha.localeCompare(a.fecha));
+    const clientePagos = pagos.filter(p => p.clienteId === cliente.id);
+    const totalCompradoC = clienteFacts.reduce((s, f) => s + f.total, 0);
+    const totalPagadoC = clientePagos.reduce((s, p) => s + p.monto, 0);
+    const saldoC = totalCompradoC - totalPagadoC;
+    const ultimas = clienteFacts.slice(0, 3);
+    const lineasFacturas = ultimas.map(f => `- ${f.fecha} · ${f.items.length} item${f.items.length !== 1 ? 's' : ''} · ${formatMoney(f.total)}`).join('\n');
+    const mensaje = `Hola ${cliente.nombre} 👋\nTe enviamos un resumen de tu cuenta corriente:\n\n📦 Total comprado: ${formatMoney(totalCompradoC)}\n💰 Total pagado: ${formatMoney(totalPagadoC)}\n📋 Saldo pendiente: ${formatMoney(saldoC)}\n\nÚltimas facturas:\n${lineasFacturas || '- Sin facturas'}\n\nCualquier consulta, estamos a disposición 🙌`;
+    const tel = cliente.tel.replace(/\D/g, '');
+    const url = `https://wa.me/54${tel}?text=${encodeURIComponent(mensaje)}`;
+    window.open(url, '_blank');
+  };
+
+  const enviarWhatsAppPresupuesto = (pres: Presupuesto) => {
+    const cliente = clientes.find(c => c.id === pres.clienteId);
+    if (!cliente) return;
+    if (!cliente.tel) { error('Este cliente no tiene teléfono registrado'); return; }
+    const lineas = pres.items.map(item => `- ${item.nombre} · ${item.talle} · ${formatMoney(item.precio)}`).join('\n');
+    const mensaje = `Hola ${cliente.nombre} 👋\nTe enviamos un presupuesto:\n\n🛍️ Productos:\n${lineas}\n\n💰 Total: ${formatMoney(pres.total)}\n\nConfirmanos si está todo bien y lo procesamos 🙌`;
+    const tel = cliente.tel.replace(/\D/g, '');
+    const url = `https://wa.me/54${tel}?text=${encodeURIComponent(mensaje)}`;
+    window.open(url, '_blank');
+  };
+
+  const exportDeudoresPDF = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(16);
+    doc.text('Lista de Deudores', 14, 20);
+    doc.setFontSize(10);
+    doc.text(`Generado: ${new Date().toLocaleDateString('es-AR')}`, 14, 28);
+    const rowsData = clientesConDeudaDetalle.map(x => {
+      const ultimaFactura = facturas.filter(f => f.clienteId === x.cliente.id).sort((a, b) => b.fecha.localeCompare(a.fecha))[0];
+      const ultimoPagoCliente = pagos.filter(p => p.clienteId === x.cliente.id).sort((a, b) => b.fecha.localeCompare(a.fecha))[0];
+      return [
+        x.cliente.nombre,
+        x.cliente.tel || '—',
+        formatMoney(x.saldo),
+        ultimaFactura?.fecha || '—',
+        ultimoPagoCliente?.fecha || '—',
+      ];
+    });
+    autoTable(doc, {
+      head: [['Cliente', 'Teléfono', 'Saldo pendiente', 'Última factura', 'Último pago']],
+      body: rowsData,
+      startY: 35,
+    });
+    doc.save('deudores.pdf');
+  };
+
+  const exportDeudoresExcel = () => {
+    const data = clientesConDeudaDetalle.map(x => {
+      const ultimaFactura = facturas.filter(f => f.clienteId === x.cliente.id).sort((a, b) => b.fecha.localeCompare(a.fecha))[0];
+      const ultimoPagoCliente = pagos.filter(p => p.clienteId === x.cliente.id).sort((a, b) => b.fecha.localeCompare(a.fecha))[0];
+      return {
+        'Cliente': x.cliente.nombre,
+        'Teléfono': x.cliente.tel || '',
+        'Saldo pendiente': x.saldo,
+        'Última factura': ultimaFactura?.fecha || '',
+        'Último pago': ultimoPagoCliente?.fecha || '',
+      };
+    });
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Deudores');
+    XLSX.writeFile(wb, 'deudores.xlsx');
+  };
+
+  const exportPreciosPDF = (listaId: string) => {
+    const lista = listasPrecios.find(l => l.id === listaId);
+    if (!lista) return;
+    const doc = new jsPDF();
+    doc.setFontSize(18);
+    doc.text(`Lista de Precios: ${lista.nombre}`, 14, 20);
+    doc.setFontSize(10);
+    doc.text(`Generado: ${new Date().toLocaleDateString('es-AR')}`, 14, 28);
+    const filteredProductos = productos.filter(p => {
+      const pp = productPrices.find(x => x.productoId === p.id && x.listaId === listaId);
+      return pp && pp.precio > 0;
+    });
+    const rowsData = filteredProductos.map(p => {
+      const pp = productPrices.find(x => x.productoId === p.id && x.listaId === listaId);
+      return [p.nombre, p.categoria, p.talle, p.color || '—', formatMoney(pp?.precio ?? 0)];
+    });
+    autoTable(doc, {
+      head: [['Producto', 'Categoría', 'Talle', 'Color', 'Precio']],
+      body: rowsData,
+      startY: 35,
+    });
+    doc.save(`lista-precios-${lista.nombre.toLowerCase()}.pdf`);
+  };
+
+  const exportPreciosExcel = (listaId: string) => {
+    const lista = listasPrecios.find(l => l.id === listaId);
+    if (!lista) return;
+    const filteredProductos = productos.filter(p => {
+      const pp = productPrices.find(x => x.productoId === p.id && x.listaId === listaId);
+      return pp && pp.precio > 0;
+    });
+    const data = filteredProductos.map(p => {
+      const pp = productPrices.find(x => x.productoId === p.id && x.listaId === listaId);
+      return {
+        'Producto': p.nombre,
+        'Categoría': p.categoria,
+        'Talle': p.talle,
+        'Color': p.color || '',
+        'Precio': pp?.precio ?? 0,
+      };
+    });
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, lista.nombre);
+    XLSX.writeFile(wb, `lista-precios-${lista.nombre.toLowerCase()}.xlsx`);
   };
 
   const handleNewClient = async () => {
@@ -1142,6 +1350,48 @@ function App() {
     }));
   }, [productos, productFilter]);
 
+  const facturasFiltradas = useMemo(() => {
+    return facturas.filter(f => {
+      if (reporteDesde && f.fecha < reporteDesde) return false;
+      if (reporteHasta && f.fecha > reporteHasta) return false;
+      return true;
+    });
+  }, [facturas, reporteDesde, reporteHasta]);
+
+  const reporteVentasPorMes = useMemo(() => {
+    const map: Record<string, number> = {};
+    facturasFiltradas.forEach(f => {
+      const mes = f.fecha.slice(0, 7);
+      map[mes] = (map[mes] || 0) + f.total;
+    });
+    return Object.entries(map).sort(([a], [b]) => a.localeCompare(b)).map(([mes, total]) => ({ mes, total }));
+  }, [facturasFiltradas]);
+
+  const reporteTopProductos = useMemo(() => {
+    const map: Record<string, { nombre: string; talle: string; unidades: number; total: number }> = {};
+    facturasFiltradas.forEach(f => {
+      f.items.forEach(item => {
+        const key = `${item.nombre}||${item.talle}`;
+        if (!map[key]) map[key] = { nombre: item.nombre, talle: item.talle, unidades: 0, total: 0 };
+        map[key].unidades += item.cant;
+        map[key].total += item.cant * item.precio;
+      });
+    });
+    return Object.values(map).sort((a, b) => b.unidades - a.unidades).slice(0, 10);
+  }, [facturasFiltradas]);
+
+  const reporteTopClientes = useMemo(() => {
+    const map: Record<string, { cliente: Cliente; cantFacturas: number; totalComprado: number }> = {};
+    facturasFiltradas.forEach(f => {
+      const cliente = clientes.find(c => c.id === f.clienteId);
+      if (!cliente) return;
+      if (!map[f.clienteId]) map[f.clienteId] = { cliente, cantFacturas: 0, totalComprado: 0 };
+      map[f.clienteId].cantFacturas++;
+      map[f.clienteId].totalComprado += f.total;
+    });
+    return Object.values(map).sort((a, b) => b.totalComprado - a.totalComprado).slice(0, 10);
+  }, [facturasFiltradas, clientes]);
+
   return (
     <>
       {page === 'login' && (
@@ -1699,12 +1949,56 @@ function App() {
                     <p className="mt-1 text-3xl font-semibold">{formatMoney(totalFactura)}</p>
                   </div>
                 </div>
-                <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-between">
-                  <p className="text-sm text-textSecondary">El total se guarda como factura y actualiza el saldo del cliente.</p>
+
+                <div className="mt-4">
+                  <label className="block text-sm font-medium text-textSecondary mb-1">Notas</label>
+                  <textarea
+                    value={invoiceNotas}
+                    onChange={e => setInvoiceNotas(e.target.value)}
+                    placeholder="Ej: entrega en 15 días, sin el talle 12..."
+                    rows={2}
+                    className="w-full rounded-2xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent resize-none"
+                  />
+                </div>
+
+                <div className="mt-4 rounded-2xl border border-border bg-surface/50 p-4">
+                  <h4 className="text-sm font-semibold text-textPrimary mb-3">Seña / pago al momento (opcional)</h4>
+                  <div className="flex gap-3">
+                    <input
+                      type="number"
+                      value={invoiceSena === 0 ? '' : invoiceSena}
+                      onChange={e => setInvoiceSena(Number(e.target.value))}
+                      placeholder="Monto de seña"
+                      className="flex-1 rounded-2xl border border-border bg-surface px-4 py-2 text-sm text-textPrimary outline-none focus:border-accent"
+                    />
+                    <select
+                      value={invoiceSenaForma}
+                      onChange={e => setInvoiceSenaForma(e.target.value as FormaPago)}
+                      className="rounded-2xl border border-border bg-surface px-3 py-2 text-sm text-textPrimary outline-none focus:border-accent"
+                    >
+                      {formasPago.map(f => <option key={f} value={f}>{f}</option>)}
+                    </select>
+                  </div>
+                  {invoiceSena > 0 && (
+                    <p className="mt-2 text-xs text-textSecondary">
+                      Saldo a quedar: <span className="font-semibold text-accent">{formatMoney(totalFactura - invoiceSena)}</span>
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex gap-3 mt-6">
+                  <button
+                    type="button"
+                    onClick={handleGuardarPresupuesto}
+                    disabled={!invoiceClienteActual || rows.every((row) => !row.prodId)}
+                    className="flex-1 rounded-3xl border border-border bg-surface py-3 text-sm font-semibold text-textPrimary transition hover:bg-border disabled:opacity-50"
+                  >
+                    Guardar como presupuesto
+                  </button>
                   <button
                     type="button"
                     onClick={handleConfirmInvoice}
-                    className="rounded-3xl bg-accent px-6 py-3 text-sm font-semibold text-white transition hover:bg-indigo-600 disabled:opacity-50"
+                    className="flex-1 rounded-3xl bg-accent py-3 text-sm font-semibold text-white transition hover:bg-indigo-600 disabled:opacity-50"
                     disabled={!invoiceClienteActual || rows.every((row) => !row.prodId)}
                   >
                     Confirmar factura
@@ -1722,15 +2016,24 @@ function App() {
                     <h3 className="text-2xl font-semibold">Clientes</h3>
                     <p className="mt-1 text-sm text-textSecondary">Revisa rápidamente el saldo, categoría y último pago.</p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPage('nuevo-cliente');
-                    }}
-                    className="rounded-3xl bg-accent px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-600"
-                  >
-                    Nuevo cliente
-                  </button>
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setExportDeudoresModalOpen(true)}
+                      className="rounded-3xl border border-border bg-surface px-4 py-2 text-sm font-semibold text-textPrimary transition hover:bg-border"
+                    >
+                      Exportar deudores
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPage('nuevo-cliente');
+                      }}
+                      className="rounded-3xl bg-accent px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-600"
+                    >
+                      Nuevo cliente
+                    </button>
+                  </div>
                 </div>
                 <div className="mt-4">
                   <input
@@ -1829,16 +2132,25 @@ function App() {
                     <h3 className="text-2xl font-semibold">{clienteActual.nombre}</h3>
                     <p className="mt-1 text-sm text-textSecondary">Categoría: {clienteActual.cat}</p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPaymentClienteId(clienteActual.id);
-                      setPaymentModalOpen(true);
-                    }}
-                    className="rounded-3xl bg-accent px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-600"
-                  >
-                    Registrar pago
-                  </button>
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => clienteActual && enviarWhatsAppResumen(clienteActual)}
+                      className="rounded-3xl bg-green-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-green-700 flex items-center gap-2"
+                    >
+                      <span>📱</span> Enviar por WhatsApp
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPaymentClienteId(clienteActual.id);
+                        setPaymentModalOpen(true);
+                      }}
+                      className="rounded-3xl bg-accent px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-600"
+                    >
+                      Registrar pago
+                    </button>
+                  </div>
                 </div>
                 <div className="mt-6 grid gap-4 sm:grid-cols-3">
                   <div className="rounded-3xl border border-border bg-surface p-5">
@@ -2077,6 +2389,13 @@ function App() {
                       placeholder="Buscar producto..."
                       className="flex-1 rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
                     />
+                    <button
+                      type="button"
+                      onClick={() => { setExportPreciosLista(listasPrecios[0]?.id || ''); setExportPreciosModalOpen(true); }}
+                      className="rounded-3xl border border-border bg-surface px-4 py-2 text-sm font-semibold text-textPrimary transition hover:bg-border whitespace-nowrap"
+                    >
+                      Exportar lista de precios
+                    </button>
                     <button
                       type="button"
                       onClick={() => {
@@ -2573,6 +2892,225 @@ function App() {
             </section>
           )}
 
+          {page === 'presupuestos' && (
+            <section className="space-y-6">
+              <div className="rounded-3xl bg-panel p-6 shadow-panel">
+                <h3 className="text-2xl font-semibold mb-1">Presupuestos</h3>
+                <p className="text-sm text-textSecondary mb-6">Presupuestos guardados. Convertí a factura cuando el cliente confirme.</p>
+                {presupuestos.length === 0 ? (
+                  <div className="py-12 text-center text-textSecondary">No hay presupuestos guardados</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse text-sm">
+                      <thead className="bg-surface text-textSecondary">
+                        <tr>
+                          <th className="px-4 py-3 text-left">Fecha</th>
+                          <th className="px-4 py-3 text-left">Cliente</th>
+                          <th className="px-4 py-3 text-left">Items</th>
+                          <th className="px-4 py-3 text-right">Total</th>
+                          <th className="px-4 py-3 text-right">Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {presupuestos.map(pres => {
+                          const cliente = clientes.find(c => c.id === pres.clienteId);
+                          return (
+                            <tr key={pres.id} className="border-t border-border hover:bg-surface">
+                              <td className="px-4 py-3">{pres.fecha}</td>
+                              <td className="px-4 py-3 font-medium">{cliente?.nombre || '—'}</td>
+                              <td className="px-4 py-3 text-textSecondary">{pres.items.length} ítem{pres.items.length !== 1 ? 's' : ''}</td>
+                              <td className="px-4 py-3 text-right font-semibold">{formatMoney(pres.total)}</td>
+                              <td className="px-4 py-3 text-right">
+                                <button onClick={() => handleConvertirPresupuesto(pres)}
+                                  className="mr-2 rounded-3xl bg-accent/20 px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent/30">
+                                  Convertir en factura
+                                </button>
+                                <button onClick={() => enviarWhatsAppPresupuesto(pres)}
+                                  className="mr-2 rounded-3xl bg-green-600/20 px-3 py-1.5 text-xs font-semibold text-green-400 hover:bg-green-600/30">
+                                  WhatsApp
+                                </button>
+                                <button onClick={async () => { await deletePresupuesto(pres.id); setPresupuestos(prev => prev.filter(p => p.id !== pres.id)); }}
+                                  className="rounded-3xl bg-red-900/40 px-3 py-1.5 text-xs text-red-400 hover:bg-red-900">
+                                  Eliminar
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
+          {page === 'reportes' && currentUserData?.rol === 'admin' && (
+            <section className="space-y-6">
+              <div className="rounded-3xl bg-panel p-6 shadow-panel">
+                <h3 className="text-2xl font-semibold mb-4">Reportes de ventas</h3>
+                <div className="flex gap-4 flex-wrap">
+                  <div>
+                    <label className="block text-xs text-textSecondary mb-1">Desde</label>
+                    <input type="date" value={reporteDesde} onChange={e => setReporteDesde(e.target.value)}
+                      className="rounded-2xl border border-border bg-surface px-4 py-2 text-sm text-textPrimary outline-none focus:border-accent" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-textSecondary mb-1">Hasta</label>
+                    <input type="date" value={reporteHasta} onChange={e => setReporteHasta(e.target.value)}
+                      className="rounded-2xl border border-border bg-surface px-4 py-2 text-sm text-textPrimary outline-none focus:border-accent" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Resumen del período */}
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div className="rounded-3xl bg-panel p-6 shadow-panel">
+                  <p className="text-sm text-textSecondary">Total vendido</p>
+                  <p className="mt-2 text-3xl font-bold text-accent">{formatMoney(facturasFiltradas.reduce((s, f) => s + f.total, 0))}</p>
+                  <p className="mt-1 text-xs text-textSecondary">{facturasFiltradas.length} facturas</p>
+                </div>
+                <div className="rounded-3xl bg-panel p-6 shadow-panel">
+                  <p className="text-sm text-textSecondary">Total cobrado (período)</p>
+                  <p className="mt-2 text-3xl font-bold text-green-400">{formatMoney(
+                    pagos.filter(p => {
+                      if (reporteDesde && p.fecha < reporteDesde) return false;
+                      if (reporteHasta && p.fecha > reporteHasta) return false;
+                      return true;
+                    }).reduce((s, p) => s + p.monto, 0)
+                  )}</p>
+                </div>
+                <div className="rounded-3xl bg-panel p-6 shadow-panel">
+                  <p className="text-sm text-textSecondary">Promedio por factura</p>
+                  <p className="mt-2 text-3xl font-bold text-textPrimary">
+                    {facturasFiltradas.length > 0 ? formatMoney(facturasFiltradas.reduce((s, f) => s + f.total, 0) / facturasFiltradas.length) : '—'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Gráfico ventas por mes */}
+              {reporteVentasPorMes.length > 0 && (
+                <div className="rounded-3xl bg-panel p-6 shadow-panel">
+                  <h4 className="text-lg font-semibold mb-4">Ventas por mes</h4>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <BarChart data={reporteVentasPorMes}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                      <XAxis dataKey="mes" tick={{ fill: '#888', fontSize: 12 }} />
+                      <YAxis tick={{ fill: '#888', fontSize: 12 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
+                      <Tooltip formatter={(value) => [formatMoney(Number(value ?? 0)), 'Ventas']} contentStyle={{ background: '#1e1e2e', border: '1px solid #333', borderRadius: 12 }} />
+                      <Bar dataKey="total" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              {/* Top 10 productos */}
+              <div className="rounded-3xl bg-panel p-6 shadow-panel">
+                <h4 className="text-lg font-semibold mb-4">Top 10 productos más vendidos</h4>
+                {reporteTopProductos.length === 0 ? (
+                  <p className="text-sm text-textSecondary">Sin datos en el período seleccionado.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse text-sm">
+                      <thead className="bg-surface text-textSecondary">
+                        <tr>
+                          <th className="px-4 py-3 text-left">#</th>
+                          <th className="px-4 py-3 text-left">Producto</th>
+                          <th className="px-4 py-3 text-left">Talle</th>
+                          <th className="px-4 py-3 text-right">Unidades</th>
+                          <th className="px-4 py-3 text-right">Total vendido</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {reporteTopProductos.map((p, i) => (
+                          <tr key={i} className="border-t border-border hover:bg-surface">
+                            <td className="px-4 py-3 text-textSecondary">{i + 1}</td>
+                            <td className="px-4 py-3 font-medium">{p.nombre}</td>
+                            <td className="px-4 py-3 text-textSecondary">{p.talle}</td>
+                            <td className="px-4 py-3 text-right">{p.unidades}</td>
+                            <td className="px-4 py-3 text-right font-semibold">{formatMoney(p.total)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Top 10 clientes */}
+              <div className="rounded-3xl bg-panel p-6 shadow-panel">
+                <div className="flex items-center gap-3 mb-4">
+                  <h4 className="text-lg font-semibold">Ranking de clientes</h4>
+                  <div className="flex gap-2">
+                    <button onClick={() => setRankingTab('volumen')}
+                      className={`rounded-3xl px-3 py-1 text-xs font-semibold transition ${rankingTab === 'volumen' ? 'bg-accent text-white' : 'bg-surface text-textSecondary hover:bg-border'}`}>
+                      Por volumen
+                    </button>
+                    <button onClick={() => setRankingTab('deuda')}
+                      className={`rounded-3xl px-3 py-1 text-xs font-semibold transition ${rankingTab === 'deuda' ? 'bg-accent text-white' : 'bg-surface text-textSecondary hover:bg-border'}`}>
+                      Por deuda
+                    </button>
+                  </div>
+                </div>
+                {rankingTab === 'volumen' ? (
+                  reporteTopClientes.length === 0 ? (
+                    <p className="text-sm text-textSecondary">Sin datos en el período.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full border-collapse text-sm">
+                        <thead className="bg-surface text-textSecondary">
+                          <tr>
+                            <th className="px-4 py-3 text-left">#</th>
+                            <th className="px-4 py-3 text-left">Cliente</th>
+                            <th className="px-4 py-3 text-right">Facturas</th>
+                            <th className="px-4 py-3 text-right">Total comprado</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {reporteTopClientes.map((item, i) => (
+                            <tr key={item.cliente.id} className="border-t border-border hover:bg-surface">
+                              <td className="px-4 py-3 text-textSecondary">{i + 1}</td>
+                              <td className="px-4 py-3 font-medium">{item.cliente.nombre}</td>
+                              <td className="px-4 py-3 text-right">{item.cantFacturas}</td>
+                              <td className="px-4 py-3 text-right font-semibold">{formatMoney(item.totalComprado)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )
+                ) : (
+                  clientesConDeudaDetalle.length === 0 ? (
+                    <p className="text-sm text-textSecondary">No hay clientes con deuda.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full border-collapse text-sm">
+                        <thead className="bg-surface text-textSecondary">
+                          <tr>
+                            <th className="px-4 py-3 text-left">#</th>
+                            <th className="px-4 py-3 text-left">Cliente</th>
+                            <th className="px-4 py-3 text-left">Teléfono</th>
+                            <th className="px-4 py-3 text-right">Saldo pendiente</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {clientesConDeudaDetalle.slice(0, 10).map((item, i) => (
+                            <tr key={item.cliente.id} className="border-t border-border hover:bg-surface">
+                              <td className="px-4 py-3 text-textSecondary">{i + 1}</td>
+                              <td className="px-4 py-3 font-medium">{item.cliente.nombre}</td>
+                              <td className="px-4 py-3 text-textSecondary">{item.cliente.tel || '—'}</td>
+                              <td className="px-4 py-3 text-right font-semibold text-amber-400">{formatMoney(item.saldo)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )
+                )}
+              </div>
+            </section>
+          )}
+
         </main>
       </div>
 
@@ -2858,6 +3396,14 @@ function App() {
                 </div>
               </div>
 
+              {/* Notas */}
+              {factura.notas && (
+                <div className="rounded-2xl bg-surface p-4">
+                  <p className="text-xs font-semibold text-textSecondary mb-1">Notas</p>
+                  <p className="text-sm text-textPrimary">{factura.notas}</p>
+                </div>
+              )}
+
               {/* Acciones */}
               <div className="flex justify-end gap-3">
                 <button
@@ -2989,6 +3535,46 @@ function App() {
         })()}
       </Modal>
         </div>
+      )}
+
+      {/* Modal exportar deudores */}
+      {exportDeudoresModalOpen && (
+        <Modal title="Exportar deudores" open={exportDeudoresModalOpen} onClose={() => setExportDeudoresModalOpen(false)}>
+          <p className="text-sm text-textSecondary mb-6">{clientesConDeudaDetalle.length} clientes con saldo pendiente, ordenados de mayor a menor deuda.</p>
+          <div className="flex gap-3">
+            <button onClick={() => { exportDeudoresPDF(); setExportDeudoresModalOpen(false); }}
+              className="flex-1 rounded-3xl bg-red-600 py-3 text-sm font-semibold text-white hover:bg-red-700">
+              Descargar PDF
+            </button>
+            <button onClick={() => { exportDeudoresExcel(); setExportDeudoresModalOpen(false); }}
+              className="flex-1 rounded-3xl bg-green-600 py-3 text-sm font-semibold text-white hover:bg-green-700">
+              Descargar Excel
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Modal exportar lista de precios */}
+      {exportPreciosModalOpen && (
+        <Modal title="Exportar lista de precios" open={exportPreciosModalOpen} onClose={() => setExportPreciosModalOpen(false)}>
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-textSecondary mb-1">Lista de precios</label>
+            <select value={exportPreciosLista} onChange={e => setExportPreciosLista(e.target.value)}
+              className="w-full rounded-2xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none focus:border-accent">
+              {listasPrecios.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
+            </select>
+          </div>
+          <div className="flex gap-3">
+            <button onClick={() => { exportPreciosPDF(exportPreciosLista); setExportPreciosModalOpen(false); }}
+              className="flex-1 rounded-3xl bg-red-600 py-3 text-sm font-semibold text-white hover:bg-red-700">
+              Descargar PDF
+            </button>
+            <button onClick={() => { exportPreciosExcel(exportPreciosLista); setExportPreciosModalOpen(false); }}
+              className="flex-1 rounded-3xl bg-green-600 py-3 text-sm font-semibold text-white hover:bg-green-700">
+              Descargar Excel
+            </button>
+          </div>
+        </Modal>
       )}
 
       <Toast toasts={toasts} onRemove={removeToast} />
