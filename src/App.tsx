@@ -1,22 +1,24 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Modal } from './components/Modal';
 import { Toast } from './components/Toast';
 import { useToast } from './hooks/useToast';
-import type { Cliente, Factura, FacturaItem, FormaPago, ListaPrecio, Pago, Producto } from './types';
+import type { Cliente, Factura, FacturaItem, FormaPago, ListaPrecio, Pago, ProductPrice, Producto } from './types';
 import type { BackupPayload } from './lib/storage';
 import {
   exportBackup,
   importBackup,
-  LISTAS_BUILTIN,
   loadClientes,
   loadFacturas,
   loadListasPrecios,
+  saveListaPrecio,
+  deleteListaPrecio,
   loadPagos,
   loadProductos,
+  loadProductPrices,
+  upsertProductPrice,
   saveClientes,
   saveFacturas,
-  saveListasPrecios,
   savePagos,
   saveProductos,
   logAudit,
@@ -178,8 +180,6 @@ function App() {
     categoria: '',
     talle: '',
     color: '',
-    precio: 0,
-    precioEsp: 0,
   });
   const [backupText, setBackupText] = useState('');
   const [backupMessage, setBackupMessage] = useState('');
@@ -187,11 +187,12 @@ function App() {
   const [selectedInvoice, setSelectedInvoice] = useState<string | null>(null);
   const [editingFactura, setEditingFactura] = useState<Factura | null>(null);
   const [listasPrecios, setListasPrecios] = useState<ListaPrecio[]>([]);
+  const [productPrices, setProductPrices] = useState<ProductPrice[]>([]);
+  const [priceMatrixGroup, setPriceMatrixGroup] = useState<string | null>(null);
+  const [editingPriceMap, setEditingPriceMap] = useState<Record<string, Record<string, string>>>({});
   const [invoiceClientSearch, setInvoiceClientSearch] = useState('');
   const [invoiceClientDropdownOpen, setInvoiceClientDropdownOpen] = useState(false);
   const [newListaNombre, setNewListaNombre] = useState('');
-  const [newListaDescuento, setNewListaDescuento] = useState(0);
-  const [newListaMinCantidad, setNewListaMinCantidad] = useState(0);
   const [editingLista, setEditingLista] = useState<ListaPrecio | null>(null);
   const [clienteSearch, setClienteSearch] = useState('');
   const [currentUser, setCurrentUser] = useState<string | null>(null);
@@ -310,18 +311,21 @@ function App() {
     if (!currentUser) return;
 
     const loadData = async () => {
-      const [clientesData, productosData, facturasData, pagosData] = await Promise.all([
+      const [clientesData, productosData, facturasData, pagosData, listasData, pricesData] = await Promise.all([
         loadClientes(),
         loadProductos(),
         loadFacturas(),
         loadPagos(),
+        loadListasPrecios(),
+        loadProductPrices(),
       ]);
 
       setClientes(clientesData);
       setProductos(productosData);
       setFacturas(facturasData);
       setPagos(pagosData);
-      setListasPrecios(loadListasPrecios());
+      setListasPrecios(listasData);
+      setProductPrices(pricesData);
     };
 
     loadData();
@@ -414,31 +418,17 @@ function App() {
     [clientes, facturas, pagos]
   );
 
-  const todasLasListas = useMemo(
-    () => [...LISTAS_BUILTIN, ...listasPrecios],
-    [listasPrecios]
-  );
-
   const getListaById = (id: string): ListaPrecio =>
-    todasLasListas.find(l => l.id === id) ?? LISTAS_BUILTIN[0];
+    listasPrecios.find(l => l.id === id) ?? { id: 'general', nombre: 'General' };
 
-  const findProductPrice = (product: Producto, lista: ListaPrecio, totalCant?: number): number => {
-    if (lista.id === 'especial' && product.precioEsp) return product.precioEsp;
-    if (lista.descuento > 0) {
-      const cantOk = lista.minCantidad === 0 || (totalCant !== undefined && totalCant >= lista.minCantidad);
-      if (cantOk) return Math.round(product.precio * (1 - lista.descuento / 100));
-    }
-    return product.precio;
+  const findProductPrice = (productoId: string, listaId: string): number => {
+    const pp = productPrices.find(p => p.productoId === productoId && p.listaId === listaId);
+    return pp?.precio ?? 0;
   };
 
-  const totalRowsCant = useMemo(
-    () => rows.reduce((sum, row) => sum + (row.cant || 0), 0),
-    [rows]
-  );
-
   const updateRowProduct = (rowKey: string, product: Producto) => {
-    const lista = getListaById(invoiceClienteActual?.cat ?? 'general');
-    const currentTotal = rows.reduce((sum, r) => sum + (r.rowKey !== rowKey ? r.cant : 1), 0);
+    const listaId = invoiceClienteActual?.cat ?? 'general';
+    const precio = findProductPrice(product.id, listaId);
     setRows((rows) =>
       rows.map((row) =>
         row.rowKey !== rowKey
@@ -450,7 +440,7 @@ function App() {
               categoria: product.categoria,
               talle: product.talle,
               color: product.color,
-              precio: findProductPrice(product, lista, currentTotal),
+              precio,
               query: '',
             }
       )
@@ -461,32 +451,14 @@ function App() {
   const updateClientPrices = (clienteId: string) => {
     const client = clientes.find((item) => item.id === clienteId);
     if (!client) return;
-    const lista = getListaById(client.cat);
-    const total = rows.reduce((sum, r) => sum + r.cant, 0);
+    const listaId = client.cat;
     setRows((rows) =>
       rows.map((row) => {
         if (!row.prodId) return row;
-        const product = productos.find((item) => item.id === row.prodId);
-        if (!product) return row;
-        return { ...row, precio: findProductPrice(product, lista, total) };
+        return { ...row, precio: findProductPrice(row.prodId, listaId) };
       })
     );
   };
-
-  // Recalcular precios cuando cambia la cantidad total (para listas con minCantidad)
-  useEffect(() => {
-    if (!invoiceClienteActual) return;
-    const lista = getListaById(invoiceClienteActual.cat);
-    if (lista.minCantidad === 0) return; // Solo si hay condición de cantidad
-    setRows((rows) =>
-      rows.map((row) => {
-        if (!row.prodId) return row;
-        const product = productos.find((p) => p.id === row.prodId);
-        if (!product) return row;
-        return { ...row, precio: findProductPrice(product, lista, totalRowsCant) };
-      })
-    );
-  }, [totalRowsCant, invoiceClienteActual?.cat]);
 
   const handleInvoiceClientChange = (value: string) => {
     setInvoiceClient(value);
@@ -749,43 +721,24 @@ function App() {
       categoria: newProducto.categoria.trim(),
       talle: newProducto.talle.trim(),
       color: newProducto.color.trim(),
-      precio: Number(newProducto.precio),
-      precioEsp: Number(newProducto.precioEsp) || undefined,
     };
 
-    // Validaciones mejoradas
-    if (!trimmed.nombre) {
-      error('❌ ERROR: El nombre del producto es obligatorio');
-      return;
-    }
-    if (!trimmed.categoria) {
-      error('❌ ERROR: La categoría del producto es obligatoria');
-      return;
-    }
-    if (!trimmed.talle) {
-      error('❌ ERROR: El talle del producto es obligatorio');
-      return;
-    }
-    if (!trimmed.color) {
-      error('❌ ERROR: El color del producto es obligatorio');
-      return;
-    }
-    if (!trimmed.precio || trimmed.precio <= 0) {
-      error('❌ ERROR: El precio del producto debe ser mayor a 0');
-      return;
-    }
+    if (!trimmed.nombre) { error('❌ ERROR: El nombre del producto es obligatorio'); return; }
+    if (!trimmed.categoria) { error('❌ ERROR: La categoría del producto es obligatoria'); return; }
+    if (!trimmed.talle) { error('❌ ERROR: El talle del producto es obligatorio'); return; }
+    if (!trimmed.color) { error('❌ ERROR: El color del producto es obligatorio'); return; }
 
     try {
       if (productEdit) {
         const nextProductos = productos.map((item) =>
-          item.id === productEdit.id ? { ...item, ...trimmed, precioEsp: trimmed.precioEsp } : item
+          item.id === productEdit.id ? { ...item, ...trimmed } : item
         );
         setProductos(nextProductos);
         await saveProductos(nextProductos);
 
         if (currentUser) {
-          const antes = { nombre: productEdit.nombre, categoria: productEdit.categoria, talle: productEdit.talle, color: productEdit.color, precio: productEdit.precio, precioEsp: productEdit.precioEsp };
-          const despues = { nombre: trimmed.nombre, categoria: trimmed.categoria, talle: trimmed.talle, color: trimmed.color, precio: trimmed.precio, precioEsp: trimmed.precioEsp };
+          const antes = { nombre: productEdit.nombre, categoria: productEdit.categoria, talle: productEdit.talle, color: productEdit.color };
+          const despues = { nombre: trimmed.nombre, categoria: trimmed.categoria, talle: trimmed.talle, color: trimmed.color };
           await logAudit(currentUser, 'PRODUCTO_EDITADO', 'producto', productEdit.id, antes, despues);
         }
 
@@ -795,20 +748,21 @@ function App() {
         const nuevo: Producto = {
           id: `p${Date.now()}`,
           ...trimmed,
+          precio: 0,
         };
         const nextProductos = [nuevo, ...productos];
         setProductos(nextProductos);
         await saveProductos(nextProductos);
 
         if (currentUser) {
-          const despues = { nombre: nuevo.nombre, categoria: nuevo.categoria, talle: nuevo.talle, color: nuevo.color, precio: nuevo.precio, precioEsp: nuevo.precioEsp };
+          const despues = { nombre: nuevo.nombre, categoria: nuevo.categoria, talle: nuevo.talle, color: nuevo.color };
           await logAudit(currentUser, 'PRODUCTO_CREADO', 'producto', nuevo.id, null, despues);
         }
 
-        success(`✅ PRODUCTO AGREGADO: ${trimmed.nombre} se agregó correctamente al inventario`);
+        success(`✅ PRODUCTO AGREGADO: ${trimmed.nombre} — ahora configura sus precios en la tabla de precios`);
       }
 
-      setNewProducto({ nombre: '', categoria: '', talle: '', color: '', precio: 0, precioEsp: 0 });
+      setNewProducto({ nombre: '', categoria: '', talle: '', color: '' });
       setProductModalOpen(false);
     } catch (err: any) {
       console.error('❌ Error manejando producto:', err);
@@ -824,8 +778,6 @@ function App() {
       categoria: item.categoria,
       talle: item.talle,
       color: item.color,
-      precio: item.precio,
-      precioEsp: item.precioEsp ?? 0,
     });
   };
 
@@ -833,14 +785,15 @@ function App() {
     const producto = productos.find(p => p.id === id);
     if (!producto) return;
 
-    if (!window.confirm(`¿Estás seguro de eliminar "${producto.nombre}"?`)) return;
+    if (!window.confirm(`¿Estás seguro de eliminar "${producto.nombre}" (${producto.talle})?`)) return;
 
     const next = productos.filter((item) => item.id !== id);
     setProductos(next);
+    setProductPrices(prev => prev.filter(pp => pp.productoId !== id));
     await saveProductos(next);
 
     if (currentUser) {
-      const antes = { nombre: producto.nombre, categoria: producto.categoria, talle: producto.talle, color: producto.color, precio: producto.precio, precioEsp: producto.precioEsp };
+      const antes = { nombre: producto.nombre, categoria: producto.categoria, talle: producto.talle, color: producto.color };
       await logAudit(currentUser, 'PRODUCTO_ELIMINADO', 'producto', id, antes, null);
     }
 
@@ -1130,48 +1083,63 @@ function App() {
     success('Sesión cerrada correctamente');
   };
 
-  const handleSaveLista = () => {
+  const handleSaveLista = async () => {
     if (!newListaNombre.trim()) { error('El nombre de la lista es obligatorio'); return; }
-    if (newListaDescuento < 0 || newListaDescuento >= 100) { error('El descuento debe estar entre 0 y 99%'); return; }
-    let nextListas: ListaPrecio[];
-    if (editingLista) {
-      nextListas = listasPrecios.map(l => l.id === editingLista.id
-        ? { ...l, nombre: newListaNombre.trim(), descuento: newListaDescuento, minCantidad: newListaMinCantidad }
-        : l);
-    } else {
-      const nueva: ListaPrecio = { id: `lp${Date.now()}`, nombre: newListaNombre.trim(), descuento: newListaDescuento, minCantidad: newListaMinCantidad };
-      nextListas = [...listasPrecios, nueva];
+    const lista: ListaPrecio = editingLista
+      ? { id: editingLista.id, nombre: newListaNombre.trim() }
+      : { id: `lp${Date.now()}`, nombre: newListaNombre.trim() };
+    try {
+      await saveListaPrecio(lista);
+      setListasPrecios(prev =>
+        editingLista ? prev.map(l => l.id === lista.id ? lista : l) : [...prev, lista]
+      );
+      setEditingLista(null);
+      setNewListaNombre('');
+      success(editingLista ? 'Lista actualizada' : 'Lista creada correctamente');
+    } catch (err: any) {
+      error(`No se pudo guardar la lista: ${err.message}`);
     }
-    setListasPrecios(nextListas);
-    saveListasPrecios(nextListas);
-    setEditingLista(null);
-    setNewListaNombre('');
-    setNewListaDescuento(0);
-    setNewListaMinCantidad(0);
-    success(editingLista ? 'Lista actualizada' : 'Lista creada correctamente');
   };
 
-  const handleDeleteLista = (id: string) => {
+  const handleDeleteLista = async (id: string) => {
     const lista = listasPrecios.find(l => l.id === id);
     if (!lista) return;
     const enUso = clientes.some(c => c.cat === id);
     if (enUso) { error(`La lista "${lista.nombre}" está en uso por uno o más clientes`); return; }
     if (!window.confirm(`¿Eliminar la lista "${lista.nombre}"?`)) return;
-    const nextListas = listasPrecios.filter(l => l.id !== id);
-    setListasPrecios(nextListas);
-    saveListasPrecios(nextListas);
-    success('Lista eliminada');
+    try {
+      await deleteListaPrecio(id);
+      setListasPrecios(prev => prev.filter(l => l.id !== id));
+      success('Lista eliminada');
+    } catch (err: any) {
+      error(`No se pudo eliminar la lista: ${err.message}`);
+    }
   };
 
   const clienteList = clientes.filter((c) =>
     clienteSearch === '' || c.nombre.toLowerCase().includes(clienteSearch.toLowerCase())
   );
 
-  const productList = productos.filter((item) =>
-    [item.nombre, item.categoria, item.talle, item.color].some((value) =>
-      value.toLowerCase().includes(productFilter.toLowerCase())
-    )
-  );
+  const productGroups = useMemo(() => {
+    const filtered = productos.filter(item =>
+      productFilter === '' ||
+      [item.nombre, item.categoria, item.talle, item.color].some(v =>
+        v.toLowerCase().includes(productFilter.toLowerCase())
+      )
+    );
+    const map = new Map<string, Producto[]>();
+    for (const p of filtered) {
+      const key = `${p.nombre}||${p.categoria}`;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(p);
+    }
+    return Array.from(map.entries()).map(([key, variants]) => ({
+      key,
+      nombre: variants[0].nombre,
+      categoria: variants[0].categoria,
+      variants,
+    }));
+  }, [productos, productFilter]);
 
   return (
     <>
@@ -1712,23 +1680,11 @@ function App() {
                     })}
                   </div>
                 </div>
-                {(() => {
-                  const lista = getListaById(invoiceClienteActual?.cat ?? 'general');
-                  if (lista.minCantidad > 0 && lista.descuento > 0) {
-                    const falta = Math.max(0, lista.minCantidad - totalRowsCant);
-                    return (
-                      <div className={`mt-4 rounded-2xl px-4 py-3 text-sm ${falta === 0 ? 'bg-green-900/20 text-green-300 border border-green-700' : 'bg-yellow-900/20 text-yellow-300 border border-yellow-700'}`}>
-                        {falta === 0
-                          ? `✓ Descuento ${lista.descuento}% aplicado (${totalRowsCant} unidades)`
-                          : `Descuento ${lista.descuento}% se activa con ${lista.minCantidad} unidades — faltan ${falta}`}
-                      </div>
-                    );
-                  }
-                  if (lista.descuento > 0) {
-                    return <div className="mt-4 rounded-2xl bg-green-900/20 border border-green-700 px-4 py-3 text-sm text-green-300">✓ Descuento {lista.descuento}% aplicado</div>;
-                  }
-                  return null;
-                })()}
+                {rows.some(r => r.prodId && r.precio === 0) && (
+                  <div className="mt-4 rounded-2xl bg-yellow-900/20 border border-yellow-700 px-4 py-3 text-sm text-yellow-300">
+                    ⚠ Algunos productos no tienen precio definido para la lista "{getListaById(invoiceClienteActual?.cat ?? 'general').nombre}". Configura los precios en la pantalla de Productos.
+                  </div>
+                )}
                 <div className="mt-6 flex flex-col gap-4 rounded-3xl bg-surface p-5 sm:flex-row sm:items-center sm:justify-between">
                   <button
                     type="button"
@@ -2069,12 +2025,8 @@ function App() {
                       onChange={(e) => setNewClientCat(e.target.value)}
                       className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
                     >
-                      <option value="general">General (precio base)</option>
-                      <option value="especial">Especial (precio especial del producto)</option>
                       {listasPrecios.map(l => (
-                        <option key={l.id} value={l.id}>
-                          {l.nombre}{l.descuento > 0 ? ` (${l.descuento}% desc${l.minCantidad > 0 ? ` con ${l.minCantidad}+ unid.` : ''})` : ''}
-                        </option>
+                        <option key={l.id} value={l.id}>{l.nombre}</option>
                       ))}
                     </select>
                   </label>
@@ -2115,7 +2067,7 @@ function App() {
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <h3 className="text-2xl font-semibold">Productos</h3>
-                    <p className="mt-1 text-sm text-textSecondary">Administra prendas, talles y precios con filtros claros.</p>
+                    <p className="mt-1 text-sm text-textSecondary">Gestiona variantes y precios por lista. Haz clic en "Editar precios" para configurar la tabla de precios de cada producto.</p>
                   </div>
                   <div className="flex gap-3">
                     <input
@@ -2128,12 +2080,12 @@ function App() {
                       type="button"
                       onClick={() => {
                         setProductEdit(null);
-                        setNewProducto({ nombre: '', categoria: '', talle: '', color: '', precio: 0, precioEsp: 0 });
+                        setNewProducto({ nombre: '', categoria: '', talle: '', color: '' });
                         setProductModalOpen(true);
                       }}
                       className="rounded-3xl bg-accent px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-600 whitespace-nowrap"
                     >
-                      + Nuevo producto
+                      + Nueva variante
                     </button>
                   </div>
                 </div>
@@ -2142,40 +2094,79 @@ function App() {
                     <table className="w-full border-collapse text-sm min-w-[600px]">
                       <thead className="bg-surface text-textSecondary">
                         <tr>
-                          <th className="px-3 py-4 text-left sm:px-5">Nombre</th>
-                          <th className="px-3 py-4 text-left sm:px-5 hidden sm:table-cell">Categoría</th>
-                          <th className="px-3 py-4 text-left sm:px-5 hidden md:table-cell">Talle</th>
-                          <th className="px-3 py-4 text-left sm:px-5 hidden md:table-cell">Color</th>
-                          <th className="px-3 py-4 text-left sm:px-5">Precios</th>
-                          <th className="px-3 py-4 sm:px-5"></th>
+                          <th className="px-3 py-4 text-left sm:px-5">Producto / Talle</th>
+                          <th className="px-3 py-4 text-left sm:px-5 hidden md:table-cell">Precios configurados</th>
+                          <th className="px-3 py-4 sm:px-5 text-right">Acciones</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {productList.map((item) => (
-                          <tr key={item.id} className="border-t border-border hover:bg-surface">
-                            <td className="px-3 py-4 sm:px-5">
-                              <div className="font-medium">{item.nombre}</div>
-                              <div className="mt-1 text-xs text-textSecondary sm:hidden">
-                                {item.categoria} • {item.talle} • {item.color}
-                              </div>
-                            </td>
-                            <td className="px-3 py-4 text-textSecondary capitalize sm:px-5 hidden sm:table-cell">{item.categoria}</td>
-                            <td className="px-3 py-4 text-textSecondary sm:px-5 hidden md:table-cell">{item.talle}</td>
-                            <td className="px-3 py-4 text-textSecondary sm:px-5 hidden md:table-cell">{item.color}</td>
-                            <td className="px-3 py-4 text-textSecondary sm:px-5">
-                              {formatMoney(item.precio)}{item.precioEsp ? ` / ${formatMoney(item.precioEsp)}` : ''}
-                            </td>
-                            <td className="px-3 py-4 text-right sm:px-5">
-                              <button type="button" onClick={() => handleProductEdit(item)}
-                                className="mr-2 rounded-3xl bg-surface px-3 py-2 text-xs text-textPrimary transition hover:bg-border">
-                                Editar
-                              </button>
-                              <button type="button" onClick={() => handleProductDelete(item.id)}
-                                className="rounded-3xl bg-red-900/40 px-3 py-2 text-xs text-red-400 transition hover:bg-red-900">
-                                Borrar
-                              </button>
-                            </td>
+                        {productGroups.length === 0 ? (
+                          <tr>
+                            <td colSpan={3} className="px-5 py-8 text-center text-textSecondary">No hay productos</td>
                           </tr>
+                        ) : productGroups.map(group => (
+                          <Fragment key={group.key}>
+                            {/* Fila de grupo */}
+                            <tr className="bg-surface/60 border-t-2 border-border">
+                              <td className="px-3 py-3 sm:px-5" colSpan={2}>
+                                <div className="flex items-center gap-3">
+                                  <div>
+                                    <span className="font-semibold text-textPrimary">{group.nombre}</span>
+                                    <span className="ml-2 text-xs text-textSecondary capitalize">{group.categoria}</span>
+                                    <span className="ml-2 text-xs text-textSecondary">· {group.variants.length} talle{group.variants.length !== 1 ? 's' : ''}</span>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-3 py-3 text-right sm:px-5">
+                                <button
+                                  type="button"
+                                  onClick={() => { setPriceMatrixGroup(group.key); setEditingPriceMap({}); }}
+                                  className="rounded-3xl bg-accent/20 px-4 py-2 text-xs font-semibold text-accent hover:bg-accent/30 transition"
+                                >
+                                  Editar precios
+                                </button>
+                              </td>
+                            </tr>
+                            {/* Filas de variantes */}
+                            {group.variants.map(item => {
+                              const hasAllPrices = listasPrecios.length > 0 && listasPrecios.every(l =>
+                                productPrices.some(pp => pp.productoId === item.id && pp.listaId === l.id && pp.precio > 0)
+                              );
+                              return (
+                                <tr key={item.id} className="border-t border-border/40 hover:bg-surface">
+                                  <td className="px-6 py-3 sm:px-8">
+                                    <span className="text-sm text-textPrimary">{item.talle}</span>
+                                    {item.color && <span className="ml-2 text-xs text-textSecondary">· {item.color}</span>}
+                                    {!hasAllPrices && (
+                                      <span className="ml-2 rounded-full bg-yellow-600/20 px-2 py-0.5 text-xs text-yellow-400">sin precios</span>
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-3 sm:px-5 hidden md:table-cell">
+                                    <div className="flex flex-wrap gap-2">
+                                      {listasPrecios.map(lista => {
+                                        const pp = productPrices.find(p => p.productoId === item.id && p.listaId === lista.id);
+                                        return (
+                                          <span key={lista.id} className={`text-xs ${pp && pp.precio > 0 ? 'text-textSecondary' : 'text-yellow-500'}`}>
+                                            <span className="text-textSecondary/50">{lista.nombre}:</span> {pp && pp.precio > 0 ? formatMoney(pp.precio) : '—'}
+                                          </span>
+                                        );
+                                      })}
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-3 text-right sm:px-5">
+                                    <button type="button" onClick={() => handleProductEdit(item)}
+                                      className="mr-2 rounded-3xl bg-surface px-3 py-2 text-xs text-textPrimary transition hover:bg-border">
+                                      Editar
+                                    </button>
+                                    <button type="button" onClick={() => handleProductDelete(item.id)}
+                                      className="rounded-3xl bg-red-900/40 px-3 py-2 text-xs text-red-400 transition hover:bg-red-900">
+                                      Borrar
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </Fragment>
                         ))}
                       </tbody>
                     </table>
@@ -2500,7 +2491,7 @@ function App() {
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <h3 className="text-2xl font-semibold">Listas de precios</h3>
-                    <p className="mt-1 text-sm text-textSecondary">Crea listas personalizadas con descuentos y asígnalas a clientes.</p>
+                    <p className="mt-1 text-sm text-textSecondary">Crea listas y asígnalas a clientes. Los precios por producto se configuran en la pantalla de Productos.</p>
                   </div>
                 </div>
 
@@ -2510,14 +2501,12 @@ function App() {
                     <thead className="bg-surface text-textSecondary">
                       <tr>
                         <th className="px-5 py-4 text-left">Nombre</th>
-                        <th className="px-5 py-4 text-left">Descuento</th>
-                        <th className="px-5 py-4 text-left">Mínimo unidades</th>
-                        <th className="px-5 py-4 text-left">Clientes</th>
+                        <th className="px-5 py-4 text-left">Clientes asignados</th>
                         <th className="px-5 py-4 text-left">Acciones</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {[...LISTAS_BUILTIN, ...listasPrecios].map((lista) => {
+                      {listasPrecios.map((lista) => {
                         const isBuiltin = lista.id === 'general' || lista.id === 'especial';
                         const cantClientes = clientes.filter(c => c.cat === lista.id).length;
                         return (
@@ -2526,13 +2515,11 @@ function App() {
                               {lista.nombre}
                               {isBuiltin && <span className="ml-2 text-xs text-textSecondary">(integrada)</span>}
                             </td>
-                            <td className="px-5 py-4 text-textSecondary">{lista.descuento > 0 ? `${lista.descuento}%` : '—'}</td>
-                            <td className="px-5 py-4 text-textSecondary">{lista.minCantidad > 0 ? `${lista.minCantidad} unidades` : lista.descuento > 0 ? 'Siempre' : '—'}</td>
-                            <td className="px-5 py-4 text-textSecondary">{cantClientes}</td>
+                            <td className="px-5 py-4 text-textSecondary">{cantClientes > 0 ? `${cantClientes} cliente${cantClientes !== 1 ? 's' : ''}` : '—'}</td>
                             <td className="px-5 py-4">
                               {!isBuiltin && (
                                 <div className="flex gap-2">
-                                  <button type="button" onClick={() => { setEditingLista(lista); setNewListaNombre(lista.nombre); setNewListaDescuento(lista.descuento); setNewListaMinCantidad(lista.minCantidad); }}
+                                  <button type="button" onClick={() => { setEditingLista(lista); setNewListaNombre(lista.nombre); }}
                                     className="rounded-3xl bg-amber-900/40 px-3 py-2 text-xs text-amber-300 hover:bg-amber-900">Editar</button>
                                   <button type="button" onClick={() => handleDeleteLista(lista.id)}
                                     className="rounded-3xl bg-red-900/40 px-3 py-2 text-xs text-red-300 hover:bg-red-900">Eliminar</button>
@@ -2549,46 +2536,27 @@ function App() {
                 {/* Formulario nueva lista */}
                 <div className="mt-8 rounded-3xl border border-border bg-surface p-6">
                   <h4 className="text-lg font-semibold mb-4">{editingLista ? `Editando: ${editingLista.nombre}` : 'Nueva lista de precios'}</h4>
-                  <div className="grid gap-4 sm:grid-cols-3">
-                    <label className="space-y-2 text-sm text-textSecondary">
+                  <div className="flex gap-4 items-end">
+                    <label className="flex-1 space-y-2 text-sm text-textSecondary">
                       Nombre de la lista
                       <input value={newListaNombre} onChange={(e) => setNewListaNombre(e.target.value)}
-                        placeholder="Ej: Cliente VIP"
+                        placeholder="Ej: Mayorista, VIP, Revendedor..."
                         className="w-full rounded-3xl border border-border bg-panel px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent" />
                     </label>
-                    <label className="space-y-2 text-sm text-textSecondary">
-                      Descuento sobre precio general (%)
-                      <input type="number" min={0} max={99} value={newListaDescuento || ''}
-                        onChange={(e) => setNewListaDescuento(Number(e.target.value))}
-                        placeholder="Ej: 10"
-                        className="w-full rounded-3xl border border-border bg-panel px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent" />
-                    </label>
-                    <label className="space-y-2 text-sm text-textSecondary">
-                      Unidades mínimas para aplicar descuento (0 = siempre)
-                      <input type="number" min={0} value={newListaMinCantidad || ''}
-                        onChange={(e) => setNewListaMinCantidad(Number(e.target.value))}
-                        placeholder="Ej: 20"
-                        className="w-full rounded-3xl border border-border bg-panel px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent" />
-                    </label>
-                  </div>
-                  {newListaDescuento > 0 && (
-                    <p className="mt-3 text-xs text-textSecondary">
-                      Vista previa: si el precio general es $1.000, el precio con esta lista será ${Math.round(1000 * (1 - newListaDescuento / 100)).toLocaleString('es-AR')}
-                      {newListaMinCantidad > 0 ? ` (solo si se compran ${newListaMinCantidad}+ unidades en total)` : ''}
-                    </p>
-                  )}
-                  <div className="mt-4 flex gap-3">
                     <button type="button" onClick={handleSaveLista}
                       className="rounded-3xl bg-accent px-6 py-3 text-sm font-semibold text-white hover:bg-indigo-600">
-                      {editingLista ? 'Actualizar lista' : 'Crear lista'}
+                      {editingLista ? 'Actualizar' : 'Crear lista'}
                     </button>
                     {editingLista && (
-                      <button type="button" onClick={() => { setEditingLista(null); setNewListaNombre(''); setNewListaDescuento(0); setNewListaMinCantidad(0); }}
+                      <button type="button" onClick={() => { setEditingLista(null); setNewListaNombre(''); }}
                         className="rounded-3xl bg-panel px-6 py-3 text-sm font-semibold text-textPrimary ring-1 ring-border hover:bg-surface">
                         Cancelar
                       </button>
                     )}
                   </div>
+                  <p className="mt-3 text-xs text-textSecondary">
+                    Una vez creada la lista, ve a Productos para asignar el precio de cada variante en esta lista.
+                  </p>
                 </div>
               </div>
             </section>
@@ -2597,58 +2565,136 @@ function App() {
         </main>
       </div>
 
-      {/* Modal de producto */}
+      {/* Modal de producto (variante) */}
       <Modal
-        title={productEdit ? 'Editar producto' : 'Nuevo producto'}
+        title={productEdit ? 'Editar variante' : 'Nueva variante'}
         open={productModalOpen}
-        onClose={() => { setProductModalOpen(false); setProductEdit(null); setNewProducto({ nombre: '', categoria: '', talle: '', color: '', precio: 0, precioEsp: 0 }); }}
+        onClose={() => { setProductModalOpen(false); setProductEdit(null); setNewProducto({ nombre: '', categoria: '', talle: '', color: '' }); }}
       >
         <div className="space-y-4">
+          <p className="text-xs text-textSecondary">Los precios se configuran en la tabla de precios del producto (botón "Editar precios").</p>
           <label className="space-y-2 text-sm text-textSecondary">
-            Nombre
+            Nombre del producto
             <input value={newProducto.nombre} onChange={(e) => setNewProducto((p) => ({ ...p, nombre: e.target.value }))}
+              placeholder="Ej: Remera, Pantalón, Campera..."
               className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent" />
           </label>
           <div className="grid grid-cols-2 gap-4">
             <label className="space-y-2 text-sm text-textSecondary">
               Categoría
               <input value={newProducto.categoria} onChange={(e) => setNewProducto((p) => ({ ...p, categoria: e.target.value }))}
+                placeholder="Ej: Indumentaria"
                 className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent" />
             </label>
             <label className="space-y-2 text-sm text-textSecondary">
               Talle
               <input value={newProducto.talle} onChange={(e) => setNewProducto((p) => ({ ...p, talle: e.target.value }))}
+                placeholder="Ej: S, M, L, XL, 38..."
                 className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent" />
             </label>
           </div>
           <label className="space-y-2 text-sm text-textSecondary">
             Color
             <input value={newProducto.color} onChange={(e) => setNewProducto((p) => ({ ...p, color: e.target.value }))}
+              placeholder="Ej: Rojo, Negro, Blanco..."
               className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent" />
           </label>
-          <div className="grid grid-cols-2 gap-4">
-            <label className="space-y-2 text-sm text-textSecondary">
-              Precio general
-              <input type="number" value={formatNumberInput(newProducto.precio)} onChange={(e) => setNewProducto((p) => ({ ...p, precio: Number(e.target.value) }))}
-                className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent" />
-            </label>
-            <label className="space-y-2 text-sm text-textSecondary">
-              Precio especial
-              <input type="number" value={formatNumberInput(newProducto.precioEsp)} onChange={(e) => setNewProducto((p) => ({ ...p, precioEsp: Number(e.target.value) }))}
-                className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent" />
-            </label>
-          </div>
           <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={() => { setProductModalOpen(false); setProductEdit(null); setNewProducto({ nombre: '', categoria: '', talle: '', color: '', precio: 0, precioEsp: 0 }); }}
+            <button type="button" onClick={() => { setProductModalOpen(false); setProductEdit(null); setNewProducto({ nombre: '', categoria: '', talle: '', color: '' }); }}
               className="rounded-3xl bg-panel px-5 py-3 text-sm font-semibold text-textPrimary ring-1 ring-border hover:bg-surface">
               Cancelar
             </button>
             <button type="button" onClick={handleProductSave}
               className="rounded-3xl bg-accent px-5 py-3 text-sm font-semibold text-white hover:bg-indigo-600">
-              {productEdit ? 'Actualizar' : 'Guardar producto'}
+              {productEdit ? 'Actualizar' : 'Guardar variante'}
             </button>
           </div>
         </div>
+      </Modal>
+
+      {/* Modal de matriz de precios */}
+      <Modal
+        title={priceMatrixGroup ? `Precios — ${priceMatrixGroup.split('||')[0]}` : ''}
+        open={priceMatrixGroup !== null}
+        onClose={() => { setPriceMatrixGroup(null); setEditingPriceMap({}); }}
+      >
+        {priceMatrixGroup && (() => {
+          const [nombre, categoria] = priceMatrixGroup.split('||');
+          const variants = productos.filter(p => p.nombre === nombre && p.categoria === categoria);
+          return (
+            <div>
+              <p className="text-sm text-textSecondary mb-4">
+                <span className="capitalize">{categoria}</span> · Editá el precio para cada talle y lista. Los cambios se guardan automáticamente.
+              </p>
+              {listasPrecios.length === 0 ? (
+                <div className="rounded-3xl bg-surface p-6 text-center text-textSecondary">
+                  No hay listas de precios configuradas. Creá una en la sección "Listas de precios".
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm border-collapse">
+                    <thead>
+                      <tr className="bg-surface">
+                        <th className="px-3 py-3 text-left text-textSecondary font-medium">Talle / Color</th>
+                        {listasPrecios.map(lista => (
+                          <th key={lista.id} className="px-3 py-3 text-left text-textSecondary font-medium min-w-[110px]">{lista.nombre}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {variants.map(variant => (
+                        <tr key={variant.id} className="border-t border-border">
+                          <td className="px-3 py-3 font-medium text-textPrimary">
+                            {variant.talle}
+                            {variant.color && <span className="ml-1 text-xs text-textSecondary">· {variant.color}</span>}
+                          </td>
+                          {listasPrecios.map(lista => {
+                            const existingPP = productPrices.find(pp => pp.productoId === variant.id && pp.listaId === lista.id);
+                            const localVal = editingPriceMap[variant.id]?.[lista.id];
+                            const displayVal = localVal !== undefined ? localVal : (existingPP?.precio ? existingPP.precio.toString() : '');
+                            const isEmpty = !displayVal || displayVal === '0';
+                            return (
+                              <td key={lista.id} className="px-3 py-2">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={displayVal}
+                                  placeholder="—"
+                                  onChange={(e) => {
+                                    setEditingPriceMap(prev => ({
+                                      ...prev,
+                                      [variant.id]: { ...(prev[variant.id] ?? {}), [lista.id]: e.target.value },
+                                    }));
+                                  }}
+                                  onBlur={async (e) => {
+                                    const val = e.target.value.trim();
+                                    if (val === '' || val === undefined) return;
+                                    const precio = Number(val);
+                                    try {
+                                      await upsertProductPrice(variant.id, lista.id, precio);
+                                      setProductPrices(prev => {
+                                        const filtered = prev.filter(pp => !(pp.productoId === variant.id && pp.listaId === lista.id));
+                                        return [...filtered, { productoId: variant.id, listaId: lista.id, precio }];
+                                      });
+                                    } catch (err: any) {
+                                      error(`Error guardando precio: ${err.message}`);
+                                    }
+                                  }}
+                                  className={`w-28 rounded-xl border px-3 py-2 text-sm text-textPrimary outline-none transition focus:border-accent ${isEmpty ? 'border-yellow-600/50 bg-yellow-900/10' : 'border-border bg-surface'}`}
+                                />
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <p className="mt-4 text-xs text-textSecondary">Los precios en amarillo están sin definir. Al salir de la celda se guarda automáticamente.</p>
+            </div>
+          );
+        })()}
       </Modal>
 
       <Modal title="Registrar pago" open={paymentModalOpen} onClose={() => setPaymentModalOpen(false)}>

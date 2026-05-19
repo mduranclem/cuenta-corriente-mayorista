@@ -1,4 +1,4 @@
-import type { Cliente, Factura, ListaPrecio, Pago, Producto } from '../types';
+import type { Cliente, Factura, ListaPrecio, Pago, ProductPrice, Producto } from '../types';
 import { supabase } from './supabase';
 
 export interface BackupPayload {
@@ -10,21 +10,68 @@ export interface BackupPayload {
 
 const LISTAS_PRECIOS_KEY = 'cc_listas_precios';
 
-export const LISTAS_BUILTIN: ListaPrecio[] = [
-  { id: 'general', nombre: 'General', descuento: 0, minCantidad: 0 },
-  { id: 'especial', nombre: 'Especial', descuento: 0, minCantidad: 0 },
+const LISTAS_FALLBACK: ListaPrecio[] = [
+  { id: 'general', nombre: 'General' },
+  { id: 'especial', nombre: 'Especial' },
 ];
 
-export function loadListasPrecios(): ListaPrecio[] {
+export async function loadListasPrecios(): Promise<ListaPrecio[]> {
   try {
-    const saved = localStorage.getItem(LISTAS_PRECIOS_KEY);
-    if (saved) return JSON.parse(saved) as ListaPrecio[];
-  } catch { /* ignore */ }
-  return [];
+    const { data, error } = await supabase
+      .from('listas_precios')
+      .select('*')
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return (data || []).map(r => ({ id: r.id, nombre: r.nombre }));
+  } catch {
+    // Fallback: migrate from localStorage if available
+    try {
+      const saved = localStorage.getItem(LISTAS_PRECIOS_KEY);
+      if (saved) {
+        const listas = JSON.parse(saved) as any[];
+        return listas.map(l => ({ id: l.id, nombre: l.nombre }));
+      }
+    } catch { /* ignore */ }
+    return LISTAS_FALLBACK;
+  }
 }
 
-export function saveListasPrecios(listas: ListaPrecio[]): void {
-  localStorage.setItem(LISTAS_PRECIOS_KEY, JSON.stringify(listas));
+export async function saveListaPrecio(lista: ListaPrecio): Promise<void> {
+  const { error } = await supabase
+    .from('listas_precios')
+    .upsert({ id: lista.id, nombre: lista.nombre });
+  if (error) throw error;
+}
+
+export async function deleteListaPrecio(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('listas_precios')
+    .delete()
+    .eq('id', id);
+  if (error) throw error;
+}
+
+export async function loadProductPrices(): Promise<ProductPrice[]> {
+  try {
+    const { data, error } = await supabase
+      .from('product_prices')
+      .select('*');
+    if (error) throw error;
+    return (data || []).map(r => ({
+      productoId: r.producto_id,
+      listaId: r.lista_id,
+      precio: parseFloat(r.precio),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function upsertProductPrice(productoId: string, listaId: string, precio: number): Promise<void> {
+  const { error } = await supabase
+    .from('product_prices')
+    .upsert({ producto_id: productoId, lista_id: listaId, precio });
+  if (error) throw error;
 }
 
 // Convertir tipos de la app a tipos de la BD
