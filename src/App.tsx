@@ -160,6 +160,7 @@ function App() {
     { rowKey: 'r0', prodId: '', nombre: '', categoria: '', talle: '', color: '', cant: 1, precio: 0, query: '' },
   ]);
   const [productFilter, setProductFilter] = useState('');
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [productEdit, setProductEdit] = useState<Producto | null>(null);
   const [productSearch, setProductSearch] = useState('');
   const [productModalOpen, setProductModalOpen] = useState(false);
@@ -1121,12 +1122,12 @@ function App() {
   );
 
   const productGroups = useMemo(() => {
-    const filtered = productos.filter(item =>
-      productFilter === '' ||
-      [item.nombre, item.categoria, item.talle, item.color].some(v =>
-        v.toLowerCase().includes(productFilter.toLowerCase())
-      )
-    );
+    const words = productFilter.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const filtered = productos.filter(item => {
+      if (words.length === 0) return true;
+      const fields = [item.nombre, item.categoria, item.talle, item.color].map(v => v.toLowerCase());
+      return words.every(word => fields.some(f => f.includes(word)));
+    });
     const map = new Map<string, Producto[]>();
     for (const p of filtered) {
       const key = `${p.nombre}||${p.categoria}`;
@@ -2104,12 +2105,21 @@ function App() {
                           <tr>
                             <td colSpan={3} className="px-5 py-8 text-center text-textSecondary">No hay productos</td>
                           </tr>
-                        ) : productGroups.map(group => (
+                        ) : productGroups.map(group => {
+                          const isExpanded = productFilter.trim() !== '' || expandedGroups.has(group.key);
+                          const toggleGroup = () => setExpandedGroups(prev => {
+                            const next = new Set(prev);
+                            if (next.has(group.key)) next.delete(group.key);
+                            else next.add(group.key);
+                            return next;
+                          });
+                          return (
                           <Fragment key={group.key}>
-                            {/* Fila de grupo */}
-                            <tr className="bg-surface/60 border-t-2 border-border">
+                            {/* Fila de grupo (colapsable) */}
+                            <tr className="bg-surface/60 border-t-2 border-border cursor-pointer hover:bg-surface/80 transition" onClick={toggleGroup}>
                               <td className="px-3 py-3 sm:px-5" colSpan={2}>
-                                <div className="flex items-center gap-3">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-textSecondary text-xs select-none">{isExpanded ? '▼' : '▶'}</span>
                                   <div>
                                     <span className="font-semibold text-textPrimary">{group.nombre}</span>
                                     <span className="ml-2 text-xs text-textSecondary capitalize">{group.categoria}</span>
@@ -2117,7 +2127,7 @@ function App() {
                                   </div>
                                 </div>
                               </td>
-                              <td className="px-3 py-3 text-right sm:px-5">
+                              <td className="px-3 py-3 text-right sm:px-5" onClick={e => e.stopPropagation()}>
                                 <button
                                   type="button"
                                   onClick={() => { setPriceMatrixGroup(group.key); setEditingPriceMap({}); }}
@@ -2127,8 +2137,8 @@ function App() {
                                 </button>
                               </td>
                             </tr>
-                            {/* Filas de variantes */}
-                            {group.variants.map(item => {
+                            {/* Filas de variantes (solo si está expandido) */}
+                            {isExpanded && group.variants.map(item => {
                               const hasAllPrices = listasPrecios.length > 0 && listasPrecios.every(l =>
                                 productPrices.some(pp => pp.productoId === item.id && pp.listaId === l.id && pp.precio > 0)
                               );
@@ -2167,7 +2177,8 @@ function App() {
                               );
                             })}
                           </Fragment>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
