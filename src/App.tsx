@@ -205,6 +205,7 @@ function App() {
   const [backupError, setBackupError] = useState('');
   const [selectedInvoice, setSelectedInvoice] = useState<string | null>(null);
   const [editingFactura, setEditingFactura] = useState<Factura | null>(null);
+  const [editingPresupuesto, setEditingPresupuesto] = useState<Presupuesto | null>(null);
   const [listasPrecios, setListasPrecios] = useState<ListaPrecio[]>([]);
   const [productPrices, setProductPrices] = useState<ProductPrice[]>([]);
   const [priceMatrixGroup, setPriceMatrixGroup] = useState<string | null>(null);
@@ -590,7 +591,7 @@ function App() {
     const items = rows.filter((row) => row.prodId && row.cant > 0);
     if (!items.length) { error('Agregá al menos un producto'); return; }
     const presupuesto: Presupuesto = {
-      id: `pres${Date.now()}`,
+      id: editingPresupuesto ? editingPresupuesto.id : `pres${Date.now()}`,
       clienteId: invoiceClienteActual.id,
       fecha: invoiceDate,
       items,
@@ -604,13 +605,28 @@ function App() {
       error(`Error guardando presupuesto: ${err?.message || 'Verificá que ejecutaste el SQL en Supabase'}`);
       return;
     }
-    setPresupuestos(prev => [presupuesto, ...prev]);
+    setPresupuestos(prev =>
+      editingPresupuesto
+        ? prev.map(p => p.id === presupuesto.id ? presupuesto : p)
+        : [presupuesto, ...prev]
+    );
     setRows([{ rowKey: 'r0', prodId: '', nombre: '', categoria: '', talle: '', color: '', cant: 1, precio: 0, query: '' }]);
     setInvoiceDate(today);
     setInvoiceNotas('');
     setInvoiceSena(0);
-    success('Presupuesto guardado');
+    setEditingPresupuesto(null);
+    success(editingPresupuesto ? 'Presupuesto actualizado' : 'Presupuesto guardado');
     setPage('presupuestos');
+  };
+
+  const handleEditarPresupuesto = (pres: Presupuesto) => {
+    setEditingPresupuesto(pres);
+    setInvoiceClient(pres.clienteId);
+    setInvoiceDate(pres.fecha);
+    setInvoiceNotas(pres.notas || '');
+    setInvoiceSena(0);
+    setRows(pres.items.map((item, i) => ({ ...item, rowKey: `r${i}`, query: '' })));
+    setPage('historial');
   };
 
   const handleConvertirPresupuesto = async (pres: Presupuesto) => {
@@ -642,7 +658,8 @@ function App() {
     const saldoC = totalCompradoC - totalPagadoC;
     const ultimas = clienteFacts.slice(0, 3);
     const lineasFacturas = ultimas.map(f => `- ${f.fecha} · ${f.items.length} item${f.items.length !== 1 ? 's' : ''} · ${formatMoney(f.total)}`).join('\n');
-    const mensaje = `Hola ${cliente.nombre} 👋\nTe enviamos un resumen de tu cuenta corriente:\n\n📦 Total comprado: ${formatMoney(totalCompradoC)}\n💰 Total pagado: ${formatMoney(totalPagadoC)}\n📋 Saldo pendiente: ${formatMoney(saldoC)}\n\nÚltimas facturas:\n${lineasFacturas || '- Sin facturas'}\n\nCualquier consulta, estamos a disposición 🙌`;
+    const wv = { wave: '\u{1F44B}', box: '\u{1F4E6}', money: '\u{1F4B0}', clipboard: '\u{1F4CB}', hands: '\u{1F64C}' };
+    const mensaje = `Hola ${cliente.nombre} ${wv.wave}\nTe enviamos un resumen de tu cuenta corriente:\n\n${wv.box} Total comprado: ${formatMoney(totalCompradoC)}\n${wv.money} Total pagado: ${formatMoney(totalPagadoC)}\n${wv.clipboard} Saldo pendiente: ${formatMoney(saldoC)}\n\nUltimas facturas:\n${lineasFacturas || '- Sin facturas'}\n\nCualquier consulta, estamos a disposicion ${wv.hands}`;
     const tel = cliente.tel.replace(/\D/g, '');
     const url = `https://wa.me/54${tel}?text=${encodeURIComponent(mensaje)}`;
     window.open(url, '_blank');
@@ -652,8 +669,9 @@ function App() {
     const cliente = clientes.find(c => c.id === pres.clienteId);
     if (!cliente) return;
     if (!cliente.tel) { error('Este cliente no tiene teléfono registrado'); return; }
+    const wv = { wave: '\u{1F44B}', bag: '\u{1F6CD}', money: '\u{1F4B0}', hands: '\u{1F64C}' };
     const lineas = pres.items.map(item => `- ${item.nombre} · ${item.talle} · ${formatMoney(item.precio)}`).join('\n');
-    const mensaje = `Hola ${cliente.nombre} 👋\nTe enviamos un presupuesto:\n\n🛍️ Productos:\n${lineas}\n\n💰 Total: ${formatMoney(pres.total)}\n\nConfirmanos si está todo bien y lo procesamos 🙌`;
+    const mensaje = `Hola ${cliente.nombre} ${wv.wave}\nTe enviamos un presupuesto:\n\n${wv.bag} Productos:\n${lineas}\n\n${wv.money} Total: ${formatMoney(pres.total)}\n\nConfirmanos si esta todo bien y lo procesamos ${wv.hands}`;
     const tel = cliente.tel.replace(/\D/g, '');
     const url = `https://wa.me/54${tel}?text=${encodeURIComponent(mensaje)}`;
     window.open(url, '_blank');
@@ -1773,9 +1791,15 @@ function App() {
               <div className="rounded-3xl bg-panel p-6 shadow-panel overflow-visible">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                   <div>
-                    <p className="text-sm text-textSecondary">{editingFactura ? 'Editando factura' : 'Factura nueva'}</p>
+                    <p className="text-sm text-textSecondary">
+                      {editingFactura ? 'Editando factura' : editingPresupuesto ? 'Editando presupuesto' : 'Factura nueva'}
+                    </p>
                     <h3 className="mt-1 text-2xl font-semibold">
-                      {editingFactura ? `Editar factura #${editingFactura.id.slice(-6).toUpperCase()}` : 'Completa la venta y actualiza la cuenta'}
+                      {editingFactura
+                        ? `Editar factura #${editingFactura.id.slice(-6).toUpperCase()}`
+                        : editingPresupuesto
+                          ? `Editar presupuesto #${editingPresupuesto.id.slice(-6).toUpperCase()}`
+                          : 'Completa la venta y actualiza la cuenta'}
                     </h3>
                   </div>
                   {editingFactura && (
@@ -2926,6 +2950,10 @@ function App() {
                               <td className="px-4 py-3 text-textSecondary">{pres.items.length} ítem{pres.items.length !== 1 ? 's' : ''}</td>
                               <td className="px-4 py-3 text-right font-semibold">{formatMoney(pres.total)}</td>
                               <td className="px-4 py-3 text-right">
+                                <button onClick={() => handleEditarPresupuesto(pres)}
+                                  className="mr-2 rounded-3xl bg-surface border border-border px-3 py-1.5 text-xs text-textPrimary hover:bg-border">
+                                  Editar
+                                </button>
                                 <button onClick={() => handleConvertirPresupuesto(pres)}
                                   className="mr-2 rounded-3xl bg-accent/20 px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent/30">
                                   Convertir en factura
