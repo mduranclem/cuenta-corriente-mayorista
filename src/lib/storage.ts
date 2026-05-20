@@ -835,11 +835,17 @@ export async function verificarPrimerAdmin(): Promise<boolean> {
   try {
     console.log('🔍 Verificando si existe primer admin en Supabase...');
 
-    const { data, error } = await supabase
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('timeout')), 10000)
+    );
+
+    const query = supabase
       .from('usuarios')
       .select('id')
       .eq('rol', 'admin')
       .limit(1);
+
+    const { data, error } = await Promise.race([query, timeout]) as any;
 
     console.log('📊 Respuesta Supabase verificarPrimerAdmin:', { data, error });
 
@@ -854,6 +860,6 @@ export async function verificarPrimerAdmin(): Promise<boolean> {
     return needsFirstAdmin;
   } catch (error) {
     console.error('❌ Error verificando primer admin:', error);
-    throw error; // Cambiar para que propague el error
+    throw error;
   }
 }

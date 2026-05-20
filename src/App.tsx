@@ -1100,7 +1100,10 @@ function App() {
 
     setLoggingIn(true);
     try {
-      const userData = await autenticarUsuario(loginUsername, loginPassword);
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('timeout')), 15000)
+      );
+      const userData = await Promise.race([autenticarUsuario(loginUsername, loginPassword), timeout]);
       setCurrentUser(userData.username);
       setCurrentUserData(userData);
       localStorage.setItem('currentUser', JSON.stringify(userData));
@@ -1114,7 +1117,9 @@ function App() {
     } catch (err: any) {
       const msg: string = err.message || '';
       let loginMsg = 'Ocurrió un error al iniciar sesión. Intentá de nuevo.';
-      if (msg.includes('Usuario o contraseña incorrectos')) {
+      if (msg === 'timeout') {
+        loginMsg = 'La conexión tardó demasiado. El servidor puede estar iniciando — esperá unos segundos e intentá de nuevo.';
+      } else if (msg.includes('Usuario o contraseña incorrectos')) {
         loginMsg = 'Usuario o contraseña incorrectos. Verificá tus datos e intentá de nuevo.';
       } else if (msg.includes('pendiente')) {
         loginMsg = 'Tu cuenta está pendiente de aprobación. Contactá al administrador.';
