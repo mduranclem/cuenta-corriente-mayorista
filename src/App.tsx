@@ -1903,7 +1903,7 @@ function App() {
                             )}
                             {matches.length > 0 && row.query && row.query.trim().length > 0 && !row.prodId && (
                               <div className="absolute left-0 top-full z-[60] mt-2 max-h-60 w-full overflow-auto rounded-3xl border border-border bg-panel shadow-2xl">
-                                {matches.slice(0, 6).map((product, index) => (
+                                {matches.map((product, index) => (
                                   <button
                                     key={product.id}
                                     type="button"
