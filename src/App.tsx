@@ -116,15 +116,32 @@ const printInvoice = (factura: Factura, cliente: Cliente, sena?: number) => {
           </tr>
         </thead>
         <tbody>
-          ${factura.items.map(item => `
+          ${factura.items.map(item => {
+            const precioUnit = factura.descuento
+              ? `<span style="text-decoration:line-through;color:#999;">${formatMoney(item.precio)}</span> <strong>${formatMoney(item.precio * (1 - factura.descuento))}</strong>`
+              : formatMoney(item.precio);
+            const subtotalItem = factura.descuento
+              ? formatMoney(item.cant * item.precio * (1 - factura.descuento))
+              : formatMoney(item.cant * item.precio);
+            return `
             <tr>
               <td><strong>${item.nombre}</strong></td>
               <td>${item.categoria} • ${item.talle} • ${item.color}</td>
               <td class="text-right">${item.cant}</td>
-              <td class="text-right">${formatMoney(item.precio)}</td>
-              <td class="text-right">${formatMoney(item.cant * item.precio)}</td>
-            </tr>
-          `).join('')}
+              <td class="text-right">${precioUnit}</td>
+              <td class="text-right">${subtotalItem}</td>
+            </tr>`;
+          }).join('')}
+          ${factura.descuento ? `
+          <tr>
+            <td colspan="4" class="text-right">Subtotal</td>
+            <td class="text-right" style="text-decoration:line-through;color:#999;">${formatMoney(factura.total / (1 - factura.descuento))}</td>
+          </tr>
+          <tr>
+            <td colspan="4" class="text-right">Descuento ${Math.round(factura.descuento * 100)}%</td>
+            <td class="text-right" style="color:green;">- ${formatMoney(factura.total / (1 - factura.descuento) * factura.descuento)}</td>
+          </tr>
+          ` : ''}
           <tr class="total-row">
             <td colspan="4" class="text-right"><strong>TOTAL GENERAL</strong></td>
             <td class="text-right"><strong>${formatMoney(factura.total)}</strong></td>
