@@ -81,6 +81,9 @@ if (fs.existsSync(distDir)) {
     if (req.path.startsWith('/api/')) {
       return res.status(404).json({ error: 'Ruta API no encontrada' });
     }
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     res.sendFile(path.join(distDir, 'index.html'));
   });
 }
