@@ -47,6 +47,7 @@ export interface Factura {
   fecha: string;
   items: FacturaItem[];
   total: number;
+  descuento?: number;
   notas?: string;
 }
 
