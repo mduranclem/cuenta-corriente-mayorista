@@ -244,6 +244,7 @@ function App() {
   const [invoiceNotas, setInvoiceNotas] = useState('');
   const [invoiceSena, setInvoiceSena] = useState(0);
   const [invoiceSenaForma, setInvoiceSenaForma] = useState<FormaPago>('Efectivo');
+  const [descuentoAplicado, setDescuentoAplicado] = useState(false);
   const [presupuestos, setPresupuestos] = useState<Presupuesto[]>([]);
   const [exportDeudoresModalOpen, setExportDeudoresModalOpen] = useState(false);
   const [exportPreciosModalOpen, setExportPreciosModalOpen] = useState(false);
@@ -422,6 +423,16 @@ function App() {
     [rows]
   );
 
+  const montoDescuento = useMemo(
+    () => descuentoAplicado ? totalFactura * 0.1 : 0,
+    [descuentoAplicado, totalFactura]
+  );
+
+  const totalConDescuento = useMemo(
+    () => totalFactura - montoDescuento,
+    [totalFactura, montoDescuento]
+  );
+
   const orderedFacturas = useMemo(
     () => [...facturas].sort((a, b) => b.fecha.localeCompare(a.fecha)),
     [facturas]
@@ -538,12 +549,14 @@ function App() {
     if (!invoiceClienteActual) return;
     const items = rows.filter((row) => row.prodId && row.cant > 0);
     if (!items.length) return;
+    const subtotal = items.reduce((sum, item) => sum + item.precio * item.cant, 0);
     const factura: Factura = {
       id: editingFactura ? editingFactura.id : `f${Date.now()}`,
       clienteId: invoiceClienteActual.id,
       fecha: invoiceDate,
       items,
-      total: items.reduce((sum, item) => sum + item.precio * item.cant, 0),
+      total: descuentoAplicado ? subtotal * 0.9 : subtotal,
+      descuento: descuentoAplicado ? 0.1 : undefined,
       notas: invoiceNotas.trim() || undefined,
     };
     const nextFacturas = editingFactura
@@ -583,6 +596,7 @@ function App() {
     setInvoiceNotas('');
     setInvoiceSena(0);
     setInvoiceSenaForma('Efectivo');
+    setDescuentoAplicado(false);
     setEditingFactura(null);
     success(editingFactura ? 'Factura actualizada exitosamente' : 'Factura creada exitosamente');
     setPage('historial');
@@ -911,6 +925,7 @@ function App() {
     if (cliente) setInvoiceClient(factura.clienteId);
     setInvoiceDate(factura.fecha);
     setRows(factura.items.map((item, i) => ({ ...item, rowKey: `r${i}`, query: '' })));
+    setDescuentoAplicado(factura.descuento != null && factura.descuento > 0);
     setPage('dashboard');
   };
 
@@ -1810,7 +1825,7 @@ function App() {
                     </h3>
                   </div>
                   {editingFactura && (
-                    <button type="button" onClick={() => { setEditingFactura(null); setRows([{ rowKey: 'r0', prodId: '', nombre: '', categoria: '', talle: '', color: '', cant: 1, precio: 0, query: '' }]); setInvoiceDate(today); }} className="rounded-3xl bg-surface px-4 py-2 text-sm text-textPrimary ring-1 ring-border hover:bg-border">
+                    <button type="button" onClick={() => { setEditingFactura(null); setRows([{ rowKey: 'r0', prodId: '', nombre: '', categoria: '', talle: '', color: '', cant: 1, precio: 0, query: '' }]); setInvoiceDate(today); setDescuentoAplicado(false); }} className="rounded-3xl bg-surface px-4 py-2 text-sm text-textPrimary ring-1 ring-border hover:bg-border">
                       Cancelar edición
                     </button>
                   )}
