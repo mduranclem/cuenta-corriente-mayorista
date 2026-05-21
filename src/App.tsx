@@ -1965,8 +1965,15 @@ function App() {
                               className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
                             />
                           </div>
-                          <div className="flex items-center text-sm text-textPrimary">
-                            {formatMoney(row.precio * row.cant)}
+                          <div className="flex flex-col text-sm">
+                            {descuentoAplicado ? (
+                              <>
+                                <span className="text-textSecondary line-through">{formatMoney(row.precio * row.cant)}</span>
+                                <span className="text-green-400 font-medium">{formatMoney(row.precio * row.cant * 0.9)}</span>
+                              </>
+                            ) : (
+                              <span className="text-textPrimary">{formatMoney(row.precio * row.cant)}</span>
+                            )}
                           </div>
                           <div className="flex items-center justify-end">
                             <button
@@ -1988,16 +1995,39 @@ function App() {
                   </div>
                 )}
                 <div className="mt-6 flex flex-col gap-4 rounded-3xl bg-surface p-5 sm:flex-row sm:items-center sm:justify-between">
-                  <button
-                    type="button"
-                    onClick={addRow}
-                    className="inline-flex items-center justify-center rounded-3xl bg-panel px-5 py-3 text-sm font-medium text-textPrimary shadow-sm ring-1 ring-border transition hover:bg-surface"
-                  >
-                    Añadir
-                  </button>
+                  <div className="flex gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={addRow}
+                      className="inline-flex items-center justify-center rounded-3xl bg-panel px-5 py-3 text-sm font-medium text-textPrimary shadow-sm ring-1 ring-border transition hover:bg-surface"
+                    >
+                      Añadir
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDescuentoAplicado(v => !v)}
+                      className={`inline-flex items-center justify-center rounded-3xl px-5 py-3 text-sm font-medium shadow-sm ring-1 transition ${
+                        descuentoAplicado
+                          ? 'bg-accent text-white ring-accent hover:opacity-90'
+                          : 'bg-panel text-textPrimary ring-border hover:bg-surface'
+                      }`}
+                    >
+                      {descuentoAplicado ? '✓ Dto. 10% activo' : 'Aplicar 10% dto.'}
+                    </button>
+                  </div>
                   <div className="text-right">
-                    <p className="text-sm text-textSecondary">Total general</p>
-                    <p className="mt-1 text-3xl font-semibold">{formatMoney(totalFactura)}</p>
+                    {descuentoAplicado ? (
+                      <>
+                        <p className="text-sm text-textSecondary line-through">{formatMoney(totalFactura)}</p>
+                        <p className="text-xs text-textSecondary">- {formatMoney(montoDescuento)} (10%)</p>
+                        <p className="mt-1 text-3xl font-semibold text-green-400">{formatMoney(totalConDescuento)}</p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-sm text-textSecondary">Total general</p>
+                        <p className="mt-1 text-3xl font-semibold">{formatMoney(totalFactura)}</p>
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -2032,7 +2062,7 @@ function App() {
                   </div>
                   {invoiceSena > 0 && (
                     <p className="mt-2 text-xs text-textSecondary">
-                      Saldo a quedar: <span className="font-semibold text-accent">{formatMoney(totalFactura - invoiceSena)}</span>
+                      Saldo a quedar: <span className="font-semibold text-accent">{formatMoney(totalConDescuento - invoiceSena)}</span>
                     </p>
                   )}
                 </div>
