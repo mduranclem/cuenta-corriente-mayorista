@@ -127,6 +127,7 @@ function facturaToDatabase(factura: Factura) {
     cliente_id: factura.clienteId,
     fecha: factura.fecha,
     total: factura.total,
+    descuento: factura.descuento ?? null,
     notas: factura.notas || null,
   };
 }
@@ -137,6 +138,7 @@ function databaseToFactura(facturaRow: any, items: any[]): Factura {
     clienteId: facturaRow.cliente_id,
     fecha: facturaRow.fecha,
     total: parseFloat(facturaRow.total),
+    descuento: facturaRow.descuento != null ? parseFloat(facturaRow.descuento) : undefined,
     notas: facturaRow.notas || '',
     items: items.map(item => ({
       prodId: item.prod_id,
@@ -306,38 +308,83 @@ export async function saveProductos(productos: Producto[]) {
   }
 }
 
+// Guardar o actualizar UNA factura (operación atómica segura)
+export async function saveFactura(factura: Factura): Promise<void> {
+  try {
+    const { error: upsertError } = await supabase
+      .from('facturas')
+      .upsert(facturaToDatabase(factura));
+    if (upsertError) throw upsertError;
+
+    // Reemplazar items de ESTA factura
+    const { error: deleteItemsError } = await supabase
+      .from('factura_items')
+      .delete()
+      .eq('factura_id', factura.id);
+    if (deleteItemsError) throw deleteItemsError;
+
+    if (factura.items.length > 0) {
+      const { error: insertItemsError } = await supabase
+        .from('factura_items')
+        .insert(factura.items.map(item => ({
+          factura_id: factura.id,
+          prod_id: item.prodId,
+          nombre: item.nombre,
+          categoria: item.categoria,
+          talle: item.talle,
+          color: item.color,
+          cant: item.cant,
+          precio: item.precio,
+        })));
+      if (insertItemsError) throw insertItemsError;
+    }
+  } catch (error) {
+    console.error('Error saving factura:', error);
+    throw error;
+  }
+}
+
+// Eliminar UNA factura (operación atómica segura)
+export async function deleteFactura(id: string): Promise<void> {
+  try {
+    const { error: deleteItemsError } = await supabase
+      .from('factura_items')
+      .delete()
+      .eq('factura_id', id);
+    if (deleteItemsError) throw deleteItemsError;
+
+    const { error: deleteFacturaError } = await supabase
+      .from('facturas')
+      .delete()
+      .eq('id', id);
+    if (deleteFacturaError) throw deleteFacturaError;
+  } catch (error) {
+    console.error('Error deleting factura:', error);
+    throw error;
+  }
+}
+
+// Solo usar en importBackup (restore completo intencional)
 export async function saveFacturas(facturas: Factura[]) {
   try {
-    // Eliminar todos los items de facturas existentes
     const { error: deleteItemsError } = await supabase
       .from('factura_items')
       .delete()
       .neq('id', 0);
+    if (deleteItemsError && deleteItemsError.code !== 'PGRST116') throw deleteItemsError;
 
-    if (deleteItemsError && deleteItemsError.code !== 'PGRST116') {
-      throw deleteItemsError;
-    }
-
-    // Eliminar todas las facturas existentes
     const { error: deleteFacturasError } = await supabase
       .from('facturas')
       .delete()
       .neq('id', '');
+    if (deleteFacturasError && deleteFacturasError.code !== 'PGRST116') throw deleteFacturasError;
 
-    if (deleteFacturasError && deleteFacturasError.code !== 'PGRST116') {
-      throw deleteFacturasError;
-    }
-
-    // Insertar nuevas facturas e items
     if (facturas.length > 0) {
-      // Insertar facturas
       const { error: insertFacturasError } = await supabase
         .from('facturas')
         .insert(facturas.map(facturaToDatabase));
-
       if (insertFacturasError) throw insertFacturasError;
 
-      // Insertar items de facturas
       const allItems = facturas.flatMap(factura =>
         factura.items.map(item => ({
           factura_id: factura.id,
@@ -350,12 +397,10 @@ export async function saveFacturas(facturas: Factura[]) {
           precio: item.precio,
         }))
       );
-
       if (allItems.length > 0) {
         const { error: insertItemsError } = await supabase
           .from('factura_items')
           .insert(allItems);
-
         if (insertItemsError) throw insertItemsError;
       }
     }

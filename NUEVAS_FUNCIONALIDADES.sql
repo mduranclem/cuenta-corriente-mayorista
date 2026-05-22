@@ -5,6 +5,9 @@
 -- Feature 1: Notas en facturas
 ALTER TABLE facturas ADD COLUMN IF NOT EXISTS notas TEXT;
 
+-- Feature: Descuento en facturas (ej: 10% = 0.1)
+ALTER TABLE facturas ADD COLUMN IF NOT EXISTS descuento NUMERIC;
+
 -- Feature 7: Presupuestos
 CREATE TABLE IF NOT EXISTS presupuestos (
   id TEXT PRIMARY KEY,

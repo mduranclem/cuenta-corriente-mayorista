@@ -22,6 +22,8 @@ import {
   loadProductPrices,
   upsertProductPrice,
   saveClientes,
+  saveFactura,
+  deleteFactura,
   saveFacturas,
   savePagos,
   saveProductos,
@@ -580,7 +582,7 @@ function App() {
       ? facturas.map(f => f.id === factura.id ? factura : f)
       : [factura, ...facturas];
     setFacturas(nextFacturas);
-    await saveFacturas(nextFacturas);
+    await saveFactura(factura);
 
     // Registrar seña si hay monto
     if (invoiceSena > 0 && !editingFactura) {
@@ -659,7 +661,7 @@ function App() {
     setInvoiceNotas(pres.notas || '');
     setInvoiceSena(0);
     setRows(pres.items.map((item, i) => ({ ...item, rowKey: `r${i}`, query: '' })));
-    setPage('historial');
+    setPage('dashboard');
   };
 
   const handleConvertirPresupuesto = async (pres: Presupuesto) => {
@@ -673,7 +675,7 @@ function App() {
     };
     const nextFacturas = [factura, ...facturas];
     setFacturas(nextFacturas);
-    await saveFacturas(nextFacturas);
+    await saveFactura(factura);
     await deletePresupuesto(pres.id);
     setPresupuestos(prev => prev.filter(p => p.id !== pres.id));
     success('Presupuesto convertido en factura');
@@ -887,11 +889,12 @@ function App() {
       if (!window.confirm(confirmMessage)) return;
 
       // Eliminar facturas y pagos del cliente
+      const facturasDelCliente = facturas.filter(f => f.clienteId === clientId);
       const nextFacturas = facturas.filter(f => f.clienteId !== clientId);
       const nextPagos = pagos.filter(p => p.clienteId !== clientId);
       setFacturas(nextFacturas);
       setPagos(nextPagos);
-      await saveFacturas(nextFacturas);
+      await Promise.all(facturasDelCliente.map(f => deleteFactura(f.id)));
       await savePagos(nextPagos);
     } else {
       if (!window.confirm(`¿Estás seguro de eliminar a "${client.nombre}"?`)) return;
@@ -927,7 +930,7 @@ function App() {
 
     const nextFacturas = facturas.filter(f => f.id !== facturaId);
     setFacturas(nextFacturas);
-    await saveFacturas(nextFacturas);
+    await deleteFactura(facturaId);
 
     if (currentUser) {
       const antes = { clienteId: factura.clienteId, clienteNombre: cliente?.nombre, fecha: factura.fecha, total: factura.total, items: factura.items };
