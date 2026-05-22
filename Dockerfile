@@ -5,6 +5,7 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY . .
+ARG CACHEBUST=1
 RUN npm run build
 
 FROM node:20-alpine AS runner
