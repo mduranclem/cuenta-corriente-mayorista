@@ -238,6 +238,7 @@ function App() {
   const [currentUserData, setCurrentUserData] = useState<any>(null);
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [registerUsername, setRegisterUsername] = useState('');
   const [registerEmail, setRegisterEmail] = useState('');
   const [registerPassword, setRegisterPassword] = useState('');
@@ -1569,15 +1570,25 @@ function App() {
 
                   <label className="space-y-2 text-sm text-textSecondary">
                     Contraseña
-                    <input
-                      type="password"
-                      value={loginPassword}
-                      onChange={(e) => { setLoginPassword(e.target.value); setLoginError(''); }}
-                      onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                      className={`w-full rounded-3xl border px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent bg-surface ${loginError ? 'border-red-500' : 'border-border'}`}
-                      placeholder="Contraseña"
-                      autoComplete="current-password"
-                    />
+                    <div className="relative">
+                      <input
+                        type={showLoginPassword ? 'text' : 'password'}
+                        value={loginPassword}
+                        onChange={(e) => { setLoginPassword(e.target.value); setLoginError(''); }}
+                        onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                        className={`w-full rounded-3xl border px-4 py-3 pr-12 text-sm text-textPrimary outline-none transition focus:border-accent bg-surface ${loginError ? 'border-red-500' : 'border-border'}`}
+                        placeholder="Contraseña"
+                        autoComplete="current-password"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowLoginPassword(v => !v)}
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-textSecondary hover:text-textPrimary transition"
+                        tabIndex={-1}
+                      >
+                        {showLoginPassword ? '🙈' : '👁️'}
+                      </button>
+                    </div>
                   </label>
 
                   {loginError && (
