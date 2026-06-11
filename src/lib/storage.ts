@@ -255,25 +255,44 @@ export async function loadPagos(): Promise<Pago[]> {
   }
 }
 
-// Funciones principales de guardado
+// Funciones atómicas (operan sobre un registro a la vez — SEGURAS)
+export async function saveCliente(cliente: Cliente): Promise<void> {
+  const { error } = await supabase.from('clientes').upsert(clienteToDatabase(cliente));
+  if (error) throw error;
+}
+
+export async function deleteCliente(id: string): Promise<void> {
+  const { error } = await supabase.from('clientes').delete().eq('id', id);
+  if (error) throw error;
+}
+
+export async function saveProducto(producto: Producto): Promise<void> {
+  const { error } = await supabase.from('productos').upsert(productoToDatabase(producto));
+  if (error) throw error;
+}
+
+export async function deleteProducto(id: string): Promise<void> {
+  const { error } = await supabase.from('productos').delete().eq('id', id);
+  if (error) throw error;
+}
+
+export async function savePago(pago: Pago): Promise<void> {
+  const { error } = await supabase.from('pagos').upsert(pagoToDatabase(pago));
+  if (error) throw error;
+}
+
+export async function deletePago(id: string): Promise<void> {
+  const { error } = await supabase.from('pagos').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// Solo usar en importBackup — reemplazo total intencional
 export async function saveClientes(clientes: Cliente[]) {
   try {
-    // Eliminar todos los clientes existentes
-    const { error: deleteError } = await supabase
-      .from('clientes')
-      .delete()
-      .neq('id', ''); // Eliminar todos
-
-    if (deleteError && deleteError.code !== 'PGRST116') { // PGRST116 = no rows to delete
-      throw deleteError;
-    }
-
-    // Insertar nuevos clientes
+    const { error: deleteError } = await supabase.from('clientes').delete().neq('id', '');
+    if (deleteError && deleteError.code !== 'PGRST116') throw deleteError;
     if (clientes.length > 0) {
-      const { error: insertError } = await supabase
-        .from('clientes')
-        .insert(clientes.map(clienteToDatabase));
-
+      const { error: insertError } = await supabase.from('clientes').insert(clientes.map(clienteToDatabase));
       if (insertError) throw insertError;
     }
   } catch (error) {
@@ -282,24 +301,13 @@ export async function saveClientes(clientes: Cliente[]) {
   }
 }
 
+// Solo usar en importBackup — reemplazo total intencional
 export async function saveProductos(productos: Producto[]) {
   try {
-    // Eliminar todos los productos existentes
-    const { error: deleteError } = await supabase
-      .from('productos')
-      .delete()
-      .neq('id', '');
-
-    if (deleteError && deleteError.code !== 'PGRST116') {
-      throw deleteError;
-    }
-
-    // Insertar nuevos productos
+    const { error: deleteError } = await supabase.from('productos').delete().neq('id', '');
+    if (deleteError && deleteError.code !== 'PGRST116') throw deleteError;
     if (productos.length > 0) {
-      const { error: insertError } = await supabase
-        .from('productos')
-        .insert(productos.map(productoToDatabase));
-
+      const { error: insertError } = await supabase.from('productos').insert(productos.map(productoToDatabase));
       if (insertError) throw insertError;
     }
   } catch (error) {
@@ -410,24 +418,13 @@ export async function saveFacturas(facturas: Factura[]) {
   }
 }
 
+// Solo usar en importBackup — reemplazo total intencional
 export async function savePagos(pagos: Pago[]) {
   try {
-    // Eliminar todos los pagos existentes
-    const { error: deleteError } = await supabase
-      .from('pagos')
-      .delete()
-      .neq('id', '');
-
-    if (deleteError && deleteError.code !== 'PGRST116') {
-      throw deleteError;
-    }
-
-    // Insertar nuevos pagos
+    const { error: deleteError } = await supabase.from('pagos').delete().neq('id', '');
+    if (deleteError && deleteError.code !== 'PGRST116') throw deleteError;
     if (pagos.length > 0) {
-      const { error: insertError } = await supabase
-        .from('pagos')
-        .insert(pagos.map(pagoToDatabase));
-
+      const { error: insertError } = await supabase.from('pagos').insert(pagos.map(pagoToDatabase));
       if (insertError) throw insertError;
     }
   } catch (error) {
