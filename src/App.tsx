@@ -939,6 +939,23 @@ function App() {
     success('Factura eliminada correctamente');
   };
 
+  const handleDeletePago = async (pagoId: string) => {
+    const pago = pagos.find(p => p.id === pagoId);
+    if (!pago) return;
+    const cliente = clientes.find(c => c.id === pago.clienteId);
+    if (!window.confirm(`¿Eliminar este pago de ${cliente?.nombre ?? 'cliente eliminado'} por ${formatMoney(pago.monto)}?`)) return;
+
+    const nextPagos = pagos.filter(p => p.id !== pagoId);
+    setPagos(nextPagos);
+    await savePagos(nextPagos);
+
+    if (currentUser) {
+      const antes = { clienteId: pago.clienteId, clienteNombre: cliente?.nombre, fecha: pago.fecha, monto: pago.monto, forma: pago.forma, notas: pago.notas };
+      await logAudit(currentUser, 'PAGO_ELIMINADO', 'pago', pagoId, antes, null);
+    }
+    success('Pago eliminado correctamente');
+  };
+
   const handleEditFactura = (factura: Factura) => {
     setEditingFactura(factura);
     const cliente = clientes.find(c => c.id === factura.clienteId);
@@ -2315,9 +2332,20 @@ function App() {
                     ) : (
                       pagosPorCliente.map((pago) => (
                         <div key={pago.id} className="rounded-3xl border border-border bg-surface p-4">
-                          <p className="text-sm text-textSecondary">{pago.fecha} • {pago.forma}</p>
-                          <p className="mt-2 text-xl font-semibold">{formatMoney(pago.monto)}</p>
-                          {pago.notas && <p className="mt-2 text-sm text-textSecondary">{pago.notas}</p>}
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm text-textSecondary">{pago.fecha} • {pago.forma}</p>
+                              <p className="mt-2 text-xl font-semibold">{formatMoney(pago.monto)}</p>
+                              {pago.notas && <p className="mt-2 text-sm text-textSecondary">{pago.notas}</p>}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleDeletePago(pago.id)}
+                              className="shrink-0 rounded-3xl bg-red-900/40 px-3 py-2 text-xs text-red-300 transition hover:bg-red-900"
+                            >
+                              🗑️ Eliminar
+                            </button>
+                          </div>
                         </div>
                       ))
                     )}
