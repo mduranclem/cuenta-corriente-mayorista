@@ -410,6 +410,34 @@ export async function saveFacturas(facturas: Factura[]) {
   }
 }
 
+// Guardar o actualizar UN pago (operación atómica segura)
+export async function savePago(pago: Pago): Promise<void> {
+  try {
+    const { error } = await supabase
+      .from('pagos')
+      .upsert(pagoToDatabase(pago));
+    if (error) throw error;
+  } catch (error) {
+    console.error('Error saving pago:', error);
+    throw error;
+  }
+}
+
+// Eliminar UN pago (operación atómica segura)
+export async function deletePago(id: string): Promise<void> {
+  try {
+    const { error } = await supabase
+      .from('pagos')
+      .delete()
+      .eq('id', id);
+    if (error) throw error;
+  } catch (error) {
+    console.error('Error deleting pago:', error);
+    throw error;
+  }
+}
+
+// Solo usar en importBackup (restore completo intencional)
 export async function savePagos(pagos: Pago[]) {
   try {
     // Eliminar todos los pagos existentes
@@ -542,6 +570,23 @@ export async function obtenerAuditoria(filtros?: AuditoriaFiltros): Promise<any[
     return data || [];
   } catch (error) {
     console.error('Error obteniendo auditoría:', error);
+    return [];
+  }
+}
+
+// Sin límite — solo para recuperación de datos perdidos
+export async function obtenerAuditoriaRecuperacionPagos(): Promise<any[]> {
+  try {
+    const { data, error } = await supabase
+      .from('auditoria')
+      .select('*')
+      .eq('entidad', 'pago')
+      .eq('accion', 'PAGO_CREADO')
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  } catch (error) {
+    console.error('Error obteniendo auditoría para recuperación:', error);
     return [];
   }
 }

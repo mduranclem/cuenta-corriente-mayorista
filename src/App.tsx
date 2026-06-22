@@ -25,10 +25,13 @@ import {
   saveFactura,
   deleteFactura,
   saveFacturas,
+  savePago,
+  deletePago,
   savePagos,
   saveProductos,
   logAudit,
   obtenerAuditoria,
+  obtenerAuditoriaRecuperacionPagos,
   verificarPrimerAdmin,
   crearPrimerAdmin,
   registrarUsuario,
@@ -273,6 +276,9 @@ function App() {
   const [reporteDesdeAplicado, setReporteDesdeAplicado] = useState('');
   const [reporteHastaAplicado, setReporteHastaAplicado] = useState('');
   const [rankingTab, setRankingTab] = useState<'volumen' | 'deuda'>('volumen');
+  const [recoveryPagos, setRecoveryPagos] = useState<Pago[]>([]);
+  const [recoveryLoading, setRecoveryLoading] = useState(false);
+  const [recoveryDone, setRecoveryDone] = useState(false);
 
   // Verificar primer admin al cargar
   useEffect(() => {
@@ -594,9 +600,12 @@ function App() {
         forma: invoiceSenaForma,
         notas: `Seña factura #${factura.id.slice(-8).toUpperCase()}`,
       };
-      const nextPagos = [pago, ...pagos];
-      setPagos(nextPagos);
-      await savePagos(nextPagos);
+      setPagos(prev => [pago, ...prev]);
+      await savePago(pago);
+      if (currentUser) {
+        const despues = { clienteId: pago.clienteId, clienteNombre: invoiceClienteActual?.nombre, fecha: pago.fecha, monto: pago.monto, forma: pago.forma, notas: pago.notas };
+        await logAudit(currentUser, 'PAGO_CREADO', 'pago', pago.id, null, despues);
+      }
     }
 
     if (currentUser) {
@@ -890,12 +899,11 @@ function App() {
 
       // Eliminar facturas y pagos del cliente
       const facturasDelCliente = facturas.filter(f => f.clienteId === clientId);
-      const nextFacturas = facturas.filter(f => f.clienteId !== clientId);
-      const nextPagos = pagos.filter(p => p.clienteId !== clientId);
-      setFacturas(nextFacturas);
-      setPagos(nextPagos);
+      const pagosDelCliente = pagos.filter(p => p.clienteId === clientId);
+      setFacturas(prev => prev.filter(f => f.clienteId !== clientId));
+      setPagos(prev => prev.filter(p => p.clienteId !== clientId));
       await Promise.all(facturasDelCliente.map(f => deleteFactura(f.id)));
-      await savePagos(nextPagos);
+      await Promise.all(pagosDelCliente.map(p => deletePago(p.id)));
     } else {
       if (!window.confirm(`¿Estás seguro de eliminar a "${client.nombre}"?`)) return;
     }
@@ -965,9 +973,8 @@ function App() {
         forma: paymentForm,
         notas: paymentNotes.trim(),
       };
-      const nextPagos = [pago, ...pagos];
-      setPagos(nextPagos);
-      await savePagos(nextPagos);
+      setPagos(prev => [pago, ...prev]);
+      await savePago(pago);
 
       if (currentUser) {
         const despues = { clienteId: pago.clienteId, clienteNombre: cliente?.nombre, fecha: pago.fecha, monto: pago.monto, forma: pago.forma, notas: pago.notas };
@@ -1387,6 +1394,69 @@ function App() {
       success('Lista eliminada');
     } catch (err: any) {
       error(`No se pudo eliminar la lista: ${err.message}`);
+    }
+  };
+
+  const handleRecuperarPagosDeAuditoria = async () => {
+    setRecoveryLoading(true);
+    setRecoveryPagos([]);
+    setRecoveryDone(false);
+    try {
+      const auditEntries = await obtenerAuditoriaRecuperacionPagos();
+      const existingIds = new Set(pagos.map(p => p.id));
+      const clienteIds = new Set(clientes.map(c => c.id));
+
+      const recuperados: Pago[] = [];
+      const seenIds = new Set<string>();
+
+      for (const entry of auditEntries) {
+        if (entry.accion !== 'PAGO_CREADO') continue;
+        const id = entry.entidad_id;
+        if (!id || existingIds.has(id) || seenIds.has(id)) continue;
+        seenIds.add(id);
+
+        let despues: any = null;
+        try {
+          const parsed = JSON.parse(entry.detalles || '{}');
+          despues = parsed.despues ?? null;
+        } catch { continue; }
+
+        if (!despues?.clienteId || !clienteIds.has(despues.clienteId)) continue;
+
+        recuperados.push({
+          id,
+          clienteId: despues.clienteId,
+          fecha: despues.fecha ?? entry.fecha?.slice(0, 10) ?? '',
+          monto: Number(despues.monto) || 0,
+          forma: despues.forma ?? 'Efectivo',
+          notas: despues.notas ?? '',
+        });
+      }
+
+      setRecoveryPagos(recuperados);
+      setRecoveryDone(true);
+    } catch (err: any) {
+      error(`Error al leer auditoría: ${err.message}`);
+    } finally {
+      setRecoveryLoading(false);
+    }
+  };
+
+  const handleRestaurarPagos = async () => {
+    if (!recoveryPagos.length) return;
+    if (!window.confirm(`¿Restaurar ${recoveryPagos.length} pago(s) desde la auditoría?`)) return;
+    try {
+      await Promise.all(recoveryPagos.map(p => savePago(p)));
+      setPagos(prev => {
+        const existingIds = new Set(prev.map(p => p.id));
+        const nuevos = recoveryPagos.filter(p => !existingIds.has(p.id));
+        return [...nuevos, ...prev];
+      });
+      success(`✅ ${recoveryPagos.length} pago(s) restaurados correctamente`);
+      setRecoveryPagos([]);
+      setRecoveryDone(false);
+    } catch (err: any) {
+      error(`Error restaurando pagos: ${err.message}`);
     }
   };
 
@@ -2724,6 +2794,77 @@ function App() {
                     {backupError && <p className="mt-3 text-sm text-red-600">{backupError}</p>}
                   </div>
                 </div>
+              </div>
+
+              {/* Recuperación de pagos desde auditoría */}
+              <div className="rounded-3xl bg-panel p-6 shadow-panel">
+                <h3 className="text-xl font-semibold">Recuperar pagos desde auditoría</h3>
+                <p className="mt-1 text-sm text-textSecondary">
+                  Busca en el historial de auditoría los pagos que existen en el registro pero no están cargados actualmente.
+                </p>
+                <div className="mt-4">
+                  <button
+                    type="button"
+                    onClick={handleRecuperarPagosDeAuditoria}
+                    disabled={recoveryLoading}
+                    className="rounded-3xl bg-accent px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-600 disabled:opacity-50"
+                  >
+                    {recoveryLoading ? 'Buscando...' : 'Buscar pagos en auditoría'}
+                  </button>
+                </div>
+
+                {recoveryDone && (
+                  <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                    <p className="font-semibold">Aviso importante:</p>
+                    <p className="mt-1">Esta herramienta solo puede recuperar pagos que fueron registrados con el botón "Registrar pago". Las <strong>señas cargadas al crear una factura</strong> no quedaron registradas en la auditoría (bug ya corregido) y deben cargarse manualmente.</p>
+                  </div>
+                )}
+
+                {recoveryDone && recoveryPagos.length === 0 && (
+                  <p className="mt-3 text-sm text-emerald-600">No se encontraron pagos faltantes en la auditoría.</p>
+                )}
+
+                {recoveryPagos.length > 0 && (
+                  <div className="mt-4 space-y-3">
+                    <p className="text-sm font-semibold text-amber-600">
+                      Se encontraron {recoveryPagos.length} pago(s) en la auditoría que no están en la base de datos:
+                    </p>
+                    <div className="max-h-80 overflow-y-auto rounded-2xl border border-border">
+                      <table className="w-full text-sm">
+                        <thead className="bg-surface">
+                          <tr>
+                            <th className="px-4 py-2 text-left text-textSecondary font-medium">Cliente</th>
+                            <th className="px-4 py-2 text-left text-textSecondary font-medium">Fecha</th>
+                            <th className="px-4 py-2 text-right text-textSecondary font-medium">Monto</th>
+                            <th className="px-4 py-2 text-left text-textSecondary font-medium">Forma</th>
+                            <th className="px-4 py-2 text-left text-textSecondary font-medium">Notas</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {recoveryPagos.map(p => {
+                            const cliente = clientes.find(c => c.id === p.clienteId);
+                            return (
+                              <tr key={p.id} className="border-t border-border">
+                                <td className="px-4 py-2 font-medium">{cliente?.nombre ?? p.clienteId}</td>
+                                <td className="px-4 py-2 text-textSecondary">{p.fecha}</td>
+                                <td className="px-4 py-2 text-right text-emerald-600 font-semibold">{formatMoney(p.monto)}</td>
+                                <td className="px-4 py-2 text-textSecondary">{p.forma}</td>
+                                <td className="px-4 py-2 text-textSecondary">{p.notas || '—'}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleRestaurarPagos}
+                      className="rounded-3xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700"
+                    >
+                      Restaurar {recoveryPagos.length} pago(s)
+                    </button>
+                  </div>
+                )}
               </div>
             </section>
           )}
