@@ -67,7 +67,7 @@ export function Sidebar({ active, onSelect, currentUserData }: SidebarProps) {
       </nav>
       <div className="mt-6 border-t border-border pt-4 space-y-1">
         {secondaryItems
-          .filter(item => (item.id !== 'admin' && item.id !== 'reportes') || isAdmin)
+          .filter(item => !['admin', 'reportes', 'backup'].includes(item.id) || isAdmin)
           .map((item) => (
             <NavButton key={item.id} item={item} active={active} onSelect={handleSelect} />
           ))}

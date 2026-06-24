@@ -1122,11 +1122,28 @@ function App() {
       ) {
         throw new Error('Formato de backup inválido');
       }
+      const confirmMsg =
+        `⚠️ RESTAURAR BACKUP\n\n` +
+        `Esto REEMPLAZARÁ todos los datos actuales con:\n\n` +
+        `• ${parsed.clientes.length} clientes\n` +
+        `• ${parsed.productos.length} productos\n` +
+        `• ${parsed.facturas.length} facturas\n` +
+        `• ${parsed.pagos.length} pagos\n\n` +
+        `Los datos actuales se ELIMINARÁN permanentemente.\n¿Confirmar?`;
+      if (!window.confirm(confirmMsg)) return;
       await importBackup(parsed);
       setClientes(parsed.clientes);
       setProductos(parsed.productos);
       setFacturas(parsed.facturas);
       setPagos(parsed.pagos);
+      if (currentUser) {
+        await logAudit(currentUser, 'BACKUP_RESTAURADO', 'sistema', 'backup', {
+          clientes: parsed.clientes.length,
+          productos: parsed.productos.length,
+          facturas: parsed.facturas.length,
+          pagos: parsed.pagos.length,
+        }, null);
+      }
       setBackupMessage('Datos restaurados correctamente');
       success('Backup restaurado exitosamente');
     } catch (error) {

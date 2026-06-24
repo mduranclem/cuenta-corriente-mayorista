@@ -435,14 +435,38 @@ export async function savePagos(pagos: Pago[]) {
 
 // Funciones de backup
 export async function exportBackup(): Promise<BackupPayload> {
-  const [clientes, productos, facturas, pagos] = await Promise.all([
-    loadClientes(),
-    loadProductos(),
-    loadFacturas(),
-    loadPagos(),
+  const [
+    { data: clientesData, error: clientesError },
+    { data: productosData, error: productosError },
+    { data: facturasData, error: facturasError },
+    { data: itemsData, error: itemsError },
+    { data: pagosData, error: pagosError },
+  ] = await Promise.all([
+    supabase.from('clientes').select('*').order('created_at', { ascending: false }),
+    supabase.from('productos').select('*').order('created_at', { ascending: false }),
+    supabase.from('facturas').select('*').order('created_at', { ascending: false }),
+    supabase.from('factura_items').select('*'),
+    supabase.from('pagos').select('*').order('created_at', { ascending: false }),
   ]);
 
-  return { clientes, productos, facturas, pagos };
+  if (clientesError) throw new Error(`Error al exportar clientes: ${clientesError.message}`);
+  if (productosError) throw new Error(`Error al exportar productos: ${productosError.message}`);
+  if (facturasError) throw new Error(`Error al exportar facturas: ${facturasError.message}`);
+  if (itemsError) throw new Error(`Error al exportar ítems de facturas: ${itemsError.message}`);
+  if (pagosError) throw new Error(`Error al exportar pagos: ${pagosError.message}`);
+
+  const itemsByFactura = (itemsData || []).reduce((acc: Record<string, any[]>, item) => {
+    if (!acc[item.factura_id]) acc[item.factura_id] = [];
+    acc[item.factura_id].push(item);
+    return acc;
+  }, {});
+
+  return {
+    clientes: (clientesData || []).map(databaseToCliente),
+    productos: (productosData || []).map(databaseToProducto),
+    facturas: (facturasData || []).map(f => databaseToFactura(f, itemsByFactura[f.id] || [])),
+    pagos: (pagosData || []).map(databaseToPago),
+  };
 }
 
 export async function importBackup(data: BackupPayload) {
