@@ -1126,28 +1126,46 @@ function App() {
       ) {
         throw new Error('Formato de backup inválido');
       }
-      const confirmMsg =
-        `⚠️ RESTAURAR BACKUP\n\n` +
-        `Esto REEMPLAZARÁ todos los datos actuales con:\n\n` +
-        `• ${parsed.clientes.length} clientes\n` +
-        `• ${parsed.productos.length} productos\n` +
-        `• ${parsed.facturas.length} facturas\n` +
-        `• ${parsed.pagos.length} pagos\n\n` +
-        `Los datos actuales se ELIMINARÁN permanentemente.\n¿Confirmar?`;
-      if (!window.confirm(confirmMsg)) return;
+      const perdidas: string[] = [];
+      if (parsed.clientes.length < clientes.length) perdidas.push(`clientes: ${clientes.length} → ${parsed.clientes.length}`);
+      if (parsed.productos.length < productos.length) perdidas.push(`productos: ${productos.length} → ${parsed.productos.length}`);
+      if (parsed.facturas.length < facturas.length) perdidas.push(`facturas: ${facturas.length} → ${parsed.facturas.length}`);
+      if (parsed.pagos.length < pagos.length) perdidas.push(`pagos: ${pagos.length} → ${parsed.pagos.length}`);
+
+      if (perdidas.length > 0) {
+        const warnMsg =
+          `🚨 ESTE BACKUP TIENE MENOS DATOS QUE LOS ACTUALES\n\n` +
+          `Si continuás, se PERDERÁN datos que ya existen:\n\n` +
+          perdidas.map(p => `• ${p}`).join('\n') +
+          `\n\nSi no estás 100% seguro de que este es el archivo correcto, cancelá.\n\n` +
+          `Para confirmar que igual querés reemplazar todo, escribí ELIMINAR (en mayúsculas):`;
+        const respuesta = window.prompt(warnMsg);
+        if (respuesta !== 'ELIMINAR') {
+          setBackupError('Restauración cancelada: no se confirmó la eliminación de datos.');
+          return;
+        }
+      } else {
+        const confirmMsg =
+          `⚠️ RESTAURAR BACKUP\n\n` +
+          `Esto REEMPLAZARÁ todos los datos actuales con:\n\n` +
+          `• ${parsed.clientes.length} clientes\n` +
+          `• ${parsed.productos.length} productos\n` +
+          `• ${parsed.facturas.length} facturas\n` +
+          `• ${parsed.pagos.length} pagos\n\n` +
+          `Los datos actuales se ELIMINARÁN permanentemente.\n¿Confirmar?`;
+        if (!window.confirm(confirmMsg)) return;
+      }
       await importBackup(parsed);
       setClientes(parsed.clientes);
       setProductos(parsed.productos);
       setFacturas(parsed.facturas);
       setPagos(parsed.pagos);
-      if (currentUser) {
-        await logAudit(currentUser, 'BACKUP_RESTAURADO', 'sistema', 'backup', {
-          clientes: parsed.clientes.length,
-          productos: parsed.productos.length,
-          facturas: parsed.facturas.length,
-          pagos: parsed.pagos.length,
-        }, null);
-      }
+      await logAudit(currentUser || 'desconocido (sin sesión)', 'BACKUP_RESTAURADO', 'sistema', 'backup', {
+        clientes: parsed.clientes.length,
+        productos: parsed.productos.length,
+        facturas: parsed.facturas.length,
+        pagos: parsed.pagos.length,
+      }, null);
       setBackupMessage('Datos restaurados correctamente');
       success('Backup restaurado exitosamente');
     } catch (error) {
