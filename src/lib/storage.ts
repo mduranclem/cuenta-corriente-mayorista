@@ -255,57 +255,45 @@ export async function loadPagos(): Promise<Pago[]> {
   }
 }
 
-// Guardar o actualizar UN cliente (operación atómica segura)
+// Funciones atómicas (operan sobre un registro a la vez — SEGURAS)
 export async function saveCliente(cliente: Cliente): Promise<void> {
-  const { error } = await supabase
-    .from('clientes')
-    .upsert(clienteToDatabase(cliente));
+  const { error } = await supabase.from('clientes').upsert(clienteToDatabase(cliente));
   if (error) throw error;
 }
 
-// Eliminar UN cliente (operación atómica segura)
 export async function deleteCliente(id: string): Promise<void> {
-  const { error } = await supabase
-    .from('clientes')
-    .delete()
-    .eq('id', id);
+  const { error } = await supabase.from('clientes').delete().eq('id', id);
   if (error) throw error;
 }
 
-// Guardar o actualizar UN producto (operación atómica segura)
 export async function saveProducto(producto: Producto): Promise<void> {
-  const { error } = await supabase
-    .from('productos')
-    .upsert(productoToDatabase(producto));
+  const { error } = await supabase.from('productos').upsert(productoToDatabase(producto));
   if (error) throw error;
 }
 
-// Eliminar UN producto (operación atómica segura)
 export async function deleteProducto(id: string): Promise<void> {
-  const { error } = await supabase
-    .from('productos')
-    .delete()
-    .eq('id', id);
+  const { error } = await supabase.from('productos').delete().eq('id', id);
+  if (error) throw error;
+}
+
+export async function savePago(pago: Pago): Promise<void> {
+  const { error } = await supabase.from('pagos').upsert(pagoToDatabase(pago));
+  if (error) throw error;
+}
+
+export async function deletePago(id: string): Promise<void> {
+  const { error } = await supabase.from('pagos').delete().eq('id', id);
   if (error) throw error;
 }
 
 // Solo usar en importBackup (restore completo intencional) — reemplaza TODA la tabla
 export async function saveClientes(clientes: Cliente[]) {
   try {
-    const { error: deleteError } = await supabase
-      .from('clientes')
-      .delete()
-      .neq('id', ''); // Eliminar todos
-
-    if (deleteError && deleteError.code !== 'PGRST116') { // PGRST116 = no rows to delete
-      throw deleteError;
-    }
+    const { error: deleteError } = await supabase.from('clientes').delete().neq('id', '');
+    if (deleteError && deleteError.code !== 'PGRST116') throw deleteError; // PGRST116 = no rows to delete
 
     if (clientes.length > 0) {
-      const { error: insertError } = await supabase
-        .from('clientes')
-        .insert(clientes.map(clienteToDatabase));
-
+      const { error: insertError } = await supabase.from('clientes').insert(clientes.map(clienteToDatabase));
       if (insertError) throw insertError;
     }
   } catch (error) {
@@ -317,20 +305,11 @@ export async function saveClientes(clientes: Cliente[]) {
 // Solo usar en importBackup (restore completo intencional) — reemplaza TODA la tabla
 export async function saveProductos(productos: Producto[]) {
   try {
-    const { error: deleteError } = await supabase
-      .from('productos')
-      .delete()
-      .neq('id', '');
-
-    if (deleteError && deleteError.code !== 'PGRST116') {
-      throw deleteError;
-    }
+    const { error: deleteError } = await supabase.from('productos').delete().neq('id', '');
+    if (deleteError && deleteError.code !== 'PGRST116') throw deleteError;
 
     if (productos.length > 0) {
-      const { error: insertError } = await supabase
-        .from('productos')
-        .insert(productos.map(productoToDatabase));
-
+      const { error: insertError } = await supabase.from('productos').insert(productos.map(productoToDatabase));
       if (insertError) throw insertError;
     }
   } catch (error) {
@@ -441,52 +420,13 @@ export async function saveFacturas(facturas: Factura[]) {
   }
 }
 
-// Guardar o actualizar UN pago (operación atómica segura)
-export async function savePago(pago: Pago): Promise<void> {
-  try {
-    const { error } = await supabase
-      .from('pagos')
-      .upsert(pagoToDatabase(pago));
-    if (error) throw error;
-  } catch (error) {
-    console.error('Error saving pago:', error);
-    throw error;
-  }
-}
-
-// Eliminar UN pago (operación atómica segura)
-export async function deletePago(id: string): Promise<void> {
-  try {
-    const { error } = await supabase
-      .from('pagos')
-      .delete()
-      .eq('id', id);
-    if (error) throw error;
-  } catch (error) {
-    console.error('Error deleting pago:', error);
-    throw error;
-  }
-}
-
-// Solo usar en importBackup (restore completo intencional)
+// Solo usar en importBackup (restore completo intencional) — reemplaza TODA la tabla
 export async function savePagos(pagos: Pago[]) {
   try {
-    // Eliminar todos los pagos existentes
-    const { error: deleteError } = await supabase
-      .from('pagos')
-      .delete()
-      .neq('id', '');
-
-    if (deleteError && deleteError.code !== 'PGRST116') {
-      throw deleteError;
-    }
-
-    // Insertar nuevos pagos
+    const { error: deleteError } = await supabase.from('pagos').delete().neq('id', '');
+    if (deleteError && deleteError.code !== 'PGRST116') throw deleteError;
     if (pagos.length > 0) {
-      const { error: insertError } = await supabase
-        .from('pagos')
-        .insert(pagos.map(pagoToDatabase));
-
+      const { error: insertError } = await supabase.from('pagos').insert(pagos.map(pagoToDatabase));
       if (insertError) throw insertError;
     }
   } catch (error) {
@@ -497,14 +437,38 @@ export async function savePagos(pagos: Pago[]) {
 
 // Funciones de backup
 export async function exportBackup(): Promise<BackupPayload> {
-  const [clientes, productos, facturas, pagos] = await Promise.all([
-    loadClientes(),
-    loadProductos(),
-    loadFacturas(),
-    loadPagos(),
+  const [
+    { data: clientesData, error: clientesError },
+    { data: productosData, error: productosError },
+    { data: facturasData, error: facturasError },
+    { data: itemsData, error: itemsError },
+    { data: pagosData, error: pagosError },
+  ] = await Promise.all([
+    supabase.from('clientes').select('*').order('created_at', { ascending: false }),
+    supabase.from('productos').select('*').order('created_at', { ascending: false }),
+    supabase.from('facturas').select('*').order('created_at', { ascending: false }),
+    supabase.from('factura_items').select('*'),
+    supabase.from('pagos').select('*').order('created_at', { ascending: false }),
   ]);
 
-  return { clientes, productos, facturas, pagos };
+  if (clientesError) throw new Error(`Error al exportar clientes: ${clientesError.message}`);
+  if (productosError) throw new Error(`Error al exportar productos: ${productosError.message}`);
+  if (facturasError) throw new Error(`Error al exportar facturas: ${facturasError.message}`);
+  if (itemsError) throw new Error(`Error al exportar ítems de facturas: ${itemsError.message}`);
+  if (pagosError) throw new Error(`Error al exportar pagos: ${pagosError.message}`);
+
+  const itemsByFactura = (itemsData || []).reduce((acc: Record<string, any[]>, item) => {
+    if (!acc[item.factura_id]) acc[item.factura_id] = [];
+    acc[item.factura_id].push(item);
+    return acc;
+  }, {});
+
+  return {
+    clientes: (clientesData || []).map(databaseToCliente),
+    productos: (productosData || []).map(databaseToProducto),
+    facturas: (facturasData || []).map(f => databaseToFactura(f, itemsByFactura[f.id] || [])),
+    pagos: (pagosData || []).map(databaseToPago),
+  };
 }
 
 export async function importBackup(data: BackupPayload) {
