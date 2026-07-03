@@ -22,6 +22,8 @@ import {
   loadProductPrices,
   upsertProductPrice,
   saveClientes,
+  saveCliente,
+  deleteCliente,
   saveFactura,
   deleteFactura,
   saveFacturas,
@@ -29,6 +31,8 @@ import {
   deletePago,
   savePagos,
   saveProductos,
+  saveProducto,
+  deleteProducto,
   logAudit,
   obtenerAuditoria,
   obtenerAuditoriaRecuperacionPagos,
@@ -830,7 +834,7 @@ function App() {
         };
         const nextClientes = clientes.map(c => c.id === editingClient.id ? clienteActualizado : c);
         setClientes(nextClientes);
-        await saveClientes(nextClientes);
+        await saveCliente(clienteActualizado);
 
         if (currentUser) {
           const antes = { nombre: editingClient.nombre, tel: editingClient.tel, email: editingClient.email, cat: editingClient.cat };
@@ -852,7 +856,7 @@ function App() {
         };
         const nextClientes = [cliente, ...clientes];
         setClientes(nextClientes);
-        await saveClientes(nextClientes);
+        await saveCliente(cliente);
 
         if (currentUser) {
           const despues = { nombre: cliente.nombre, tel: cliente.tel, email: cliente.email, cat: cliente.cat };
@@ -910,7 +914,7 @@ function App() {
 
     const nextClientes = clientes.filter(c => c.id !== clientId);
     setClientes(nextClientes);
-    await saveClientes(nextClientes);
+    await deleteCliente(clientId);
 
     if (currentUser) {
       const facturasEliminadas = facturas.filter(f => f.clienteId === clientId).length;
@@ -1006,11 +1010,12 @@ function App() {
 
     try {
       if (productEdit) {
+        const productoActualizado = { ...productEdit, ...trimmed };
         const nextProductos = productos.map((item) =>
-          item.id === productEdit.id ? { ...item, ...trimmed } : item
+          item.id === productEdit.id ? productoActualizado : item
         );
         setProductos(nextProductos);
-        await saveProductos(nextProductos);
+        await saveProducto(productoActualizado);
 
         if (currentUser) {
           const antes = { nombre: productEdit.nombre, categoria: productEdit.categoria, talle: productEdit.talle, color: productEdit.color };
@@ -1028,7 +1033,7 @@ function App() {
         };
         const nextProductos = [nuevo, ...productos];
         setProductos(nextProductos);
-        await saveProductos(nextProductos);
+        await saveProducto(nuevo);
 
         if (currentUser) {
           const despues = { nombre: nuevo.nombre, categoria: nuevo.categoria, talle: nuevo.talle, color: nuevo.color };
@@ -1066,7 +1071,7 @@ function App() {
     const next = productos.filter((item) => item.id !== id);
     setProductos(next);
     setProductPrices(prev => prev.filter(pp => pp.productoId !== id));
-    await saveProductos(next);
+    await deleteProducto(id);
 
     if (currentUser) {
       const antes = { nombre: producto.nombre, categoria: producto.categoria, talle: producto.talle, color: producto.color };

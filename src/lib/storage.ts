@@ -255,10 +255,43 @@ export async function loadPagos(): Promise<Pago[]> {
   }
 }
 
-// Funciones principales de guardado
+// Guardar o actualizar UN cliente (operación atómica segura)
+export async function saveCliente(cliente: Cliente): Promise<void> {
+  const { error } = await supabase
+    .from('clientes')
+    .upsert(clienteToDatabase(cliente));
+  if (error) throw error;
+}
+
+// Eliminar UN cliente (operación atómica segura)
+export async function deleteCliente(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('clientes')
+    .delete()
+    .eq('id', id);
+  if (error) throw error;
+}
+
+// Guardar o actualizar UN producto (operación atómica segura)
+export async function saveProducto(producto: Producto): Promise<void> {
+  const { error } = await supabase
+    .from('productos')
+    .upsert(productoToDatabase(producto));
+  if (error) throw error;
+}
+
+// Eliminar UN producto (operación atómica segura)
+export async function deleteProducto(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('productos')
+    .delete()
+    .eq('id', id);
+  if (error) throw error;
+}
+
+// Solo usar en importBackup (restore completo intencional) — reemplaza TODA la tabla
 export async function saveClientes(clientes: Cliente[]) {
   try {
-    // Eliminar todos los clientes existentes
     const { error: deleteError } = await supabase
       .from('clientes')
       .delete()
@@ -268,7 +301,6 @@ export async function saveClientes(clientes: Cliente[]) {
       throw deleteError;
     }
 
-    // Insertar nuevos clientes
     if (clientes.length > 0) {
       const { error: insertError } = await supabase
         .from('clientes')
@@ -282,9 +314,9 @@ export async function saveClientes(clientes: Cliente[]) {
   }
 }
 
+// Solo usar en importBackup (restore completo intencional) — reemplaza TODA la tabla
 export async function saveProductos(productos: Producto[]) {
   try {
-    // Eliminar todos los productos existentes
     const { error: deleteError } = await supabase
       .from('productos')
       .delete()
@@ -294,7 +326,6 @@ export async function saveProductos(productos: Producto[]) {
       throw deleteError;
     }
 
-    // Insertar nuevos productos
     if (productos.length > 0) {
       const { error: insertError } = await supabase
         .from('productos')
