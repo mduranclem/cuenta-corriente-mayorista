@@ -36,6 +36,7 @@ import {
   logAudit,
   obtenerAuditoria,
   obtenerAuditoriaRecuperacionPagos,
+  testConnection,
   verificarPrimerAdmin,
   crearPrimerAdmin,
   registrarUsuario,
@@ -284,6 +285,8 @@ function App() {
   const [recoveryPagos, setRecoveryPagos] = useState<Pago[]>([]);
   const [recoveryLoading, setRecoveryLoading] = useState(false);
   const [recoveryDone, setRecoveryDone] = useState(false);
+  const [dataLoading, setDataLoading] = useState(false);
+  const [dataError, setDataError] = useState(false);
 
   // Verificar primer admin al cargar
   useEffect(() => {
@@ -369,11 +372,12 @@ function App() {
     }
   }, [page]);
 
-  useEffect(() => {
-    // Solo cargar datos si hay un usuario logueado
+  const doLoadData = async () => {
     if (!currentUser) return;
-
-    const loadData = async () => {
+    setDataLoading(true);
+    setDataError(false);
+    try {
+      await testConnection();
       const [clientesData, productosData, facturasData, pagosData, listasData, pricesData, presupuestosData] = await Promise.all([
         loadClientes(),
         loadProductos(),
@@ -383,7 +387,6 @@ function App() {
         loadProductPrices(),
         loadPresupuestos(),
       ]);
-
       setClientes(clientesData);
       setProductos(productosData);
       setFacturas(facturasData);
@@ -391,9 +394,17 @@ function App() {
       setListasPrecios(listasData);
       setProductPrices(pricesData);
       setPresupuestos(presupuestosData);
-    };
+    } catch (err) {
+      console.error('Error cargando datos:', err);
+      setDataError(true);
+    } finally {
+      setDataLoading(false);
+    }
+  };
 
-    loadData();
+  useEffect(() => {
+    if (!currentUser) return;
+    doLoadData();
   }, [currentUser]);
 
   useEffect(() => {
@@ -1871,6 +1882,29 @@ function App() {
                   )}
                 </div>
               </div>
+
+          {dataLoading && (
+            <div className="mb-4 flex items-center gap-3 rounded-2xl bg-panel px-5 py-3 text-sm text-textSecondary shadow-panel">
+              <svg className="h-4 w-4 animate-spin text-accent" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+              </svg>
+              Cargando datos...
+            </div>
+          )}
+
+          {dataError && !dataLoading && (
+            <div className="mb-4 flex items-center justify-between gap-4 rounded-2xl border border-red-200 bg-red-50 px-5 py-3 text-sm text-red-800">
+              <span>No se pudo conectar con la base de datos. Los datos que ves pueden estar desactualizados.</span>
+              <button
+                type="button"
+                onClick={doLoadData}
+                className="shrink-0 rounded-xl bg-red-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
+              >
+                Reintentar
+              </button>
+            </div>
+          )}
 
           {page === 'inicio' && (
             <section className="space-y-6">

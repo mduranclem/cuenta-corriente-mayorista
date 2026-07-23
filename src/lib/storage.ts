@@ -174,6 +174,11 @@ function databaseToPago(row: any): Pago {
   };
 }
 
+export async function testConnection(): Promise<void> {
+  const { error } = await supabase.from('clientes').select('id').limit(1);
+  if (error) throw error;
+}
+
 // Funciones principales de carga
 export async function loadClientes(): Promise<Cliente[]> {
   try {
