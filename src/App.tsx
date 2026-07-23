@@ -21,6 +21,7 @@ import {
   loadProductos,
   loadProductPrices,
   upsertProductPrice,
+  clearAllProductPrices,
   saveClientes,
   saveCliente,
   deleteCliente,
@@ -461,6 +462,11 @@ function App() {
 
   const totalFactura = useMemo(
     () => rows.reduce((total, row) => total + row.precio * row.cant, 0),
+    [rows]
+  );
+
+  const totalUnidades = useMemo(
+    () => rows.reduce((sum, row) => sum + (row.prodId ? row.cant : 0), 0),
     [rows]
   );
 
@@ -1529,6 +1535,57 @@ function App() {
     }
   };
 
+  const handleBuscarYRestaurarPagos = async () => {
+    setRecoveryLoading(true);
+    setRecoveryPagos([]);
+    setRecoveryDone(false);
+    try {
+      const auditEntries = await obtenerAuditoriaRecuperacionPagos();
+      const existingIds = new Set(pagos.map(p => p.id));
+      const clienteIds = new Set(clientes.map(c => c.id));
+      const recuperados: Pago[] = [];
+      const seenIds = new Set<string>();
+      for (const entry of auditEntries) {
+        if (entry.accion !== 'PAGO_CREADO') continue;
+        const id = entry.entidad_id;
+        if (!id || existingIds.has(id) || seenIds.has(id)) continue;
+        seenIds.add(id);
+        let despues: any = null;
+        try { despues = JSON.parse(entry.detalles || '{}').despues ?? null; } catch { continue; }
+        if (!despues?.clienteId || !clienteIds.has(despues.clienteId)) continue;
+        recuperados.push({
+          id,
+          clienteId: despues.clienteId,
+          fecha: despues.fecha ?? entry.fecha?.slice(0, 10) ?? '',
+          monto: Number(despues.monto) || 0,
+          forma: despues.forma ?? 'Efectivo',
+          notas: despues.notas ?? '',
+        });
+      }
+      if (recuperados.length === 0) {
+        success('No se encontraron pagos faltantes. La base de datos está completa.');
+        setRecoveryDone(true);
+        return;
+      }
+      if (!window.confirm(`Se encontraron ${recuperados.length} pago(s) faltantes. ¿Restaurarlos ahora?`)) {
+        setRecoveryPagos(recuperados);
+        setRecoveryDone(true);
+        return;
+      }
+      await Promise.all(recuperados.map(p => savePago(p)));
+      setPagos(prev => {
+        const ids = new Set(prev.map(p => p.id));
+        return [...recuperados.filter(p => !ids.has(p.id)), ...prev];
+      });
+      success(`✅ ${recuperados.length} pago(s) restaurados correctamente`);
+      setRecoveryDone(true);
+    } catch (err: any) {
+      error(`Error al restaurar pagos: ${err.message}`);
+    } finally {
+      setRecoveryLoading(false);
+    }
+  };
+
   const clienteList = clientes.filter((c) =>
     clienteSearch === '' || c.nombre.toLowerCase().includes(clienteSearch.toLowerCase())
   );
@@ -2208,16 +2265,39 @@ function App() {
                     </button>
                   </div>
                   <div className="text-right">
+                    {totalUnidades > 0 && (
+                      <p className="text-xs text-textSecondary mb-1">{totalUnidades} unidad{totalUnidades !== 1 ? 'es' : ''}</p>
+                    )}
                     {descuentoAplicado ? (
                       <>
                         <p className="text-sm text-textSecondary line-through">{formatMoney(totalFactura)}</p>
                         <p className="text-xs text-textSecondary">- {formatMoney(montoDescuento)} (10%)</p>
-                        <p className="mt-1 text-3xl font-semibold text-green-400">{formatMoney(totalConDescuento)}</p>
+                        {invoiceSena > 0 ? (
+                          <>
+                            <p className="mt-1 text-lg font-semibold text-green-400 line-through">{formatMoney(totalConDescuento)}</p>
+                            <p className="text-xs text-textSecondary">- {formatMoney(invoiceSena)} (seña)</p>
+                            <p className="mt-1 text-3xl font-semibold text-accent">{formatMoney(totalConDescuento - invoiceSena)}</p>
+                            <p className="text-xs text-textSecondary">saldo a pagar</p>
+                          </>
+                        ) : (
+                          <p className="mt-1 text-3xl font-semibold text-green-400">{formatMoney(totalConDescuento)}</p>
+                        )}
                       </>
                     ) : (
                       <>
-                        <p className="text-sm text-textSecondary">Total general</p>
-                        <p className="mt-1 text-3xl font-semibold">{formatMoney(totalFactura)}</p>
+                        {invoiceSena > 0 ? (
+                          <>
+                            <p className="text-sm text-textSecondary line-through">{formatMoney(totalFactura)}</p>
+                            <p className="text-xs text-textSecondary">- {formatMoney(invoiceSena)} (seña)</p>
+                            <p className="mt-1 text-3xl font-semibold text-accent">{formatMoney(totalFactura - invoiceSena)}</p>
+                            <p className="text-xs text-textSecondary">saldo a pagar</p>
+                          </>
+                        ) : (
+                          <>
+                            <p className="text-sm text-textSecondary">Total general</p>
+                            <p className="mt-1 text-3xl font-semibold">{formatMoney(totalFactura)}</p>
+                          </>
+                        )}
                       </>
                     )}
                   </div>
@@ -2252,11 +2332,6 @@ function App() {
                       {formasPago.map(f => <option key={f} value={f}>{f}</option>)}
                     </select>
                   </div>
-                  {invoiceSena > 0 && (
-                    <p className="mt-2 text-xs text-textSecondary">
-                      Saldo a quedar: <span className="font-semibold text-accent">{formatMoney(totalConDescuento - invoiceSena)}</span>
-                    </p>
-                  )}
                 </div>
 
                 <div className="flex gap-3 mt-6">
@@ -2915,14 +2990,22 @@ function App() {
                 <p className="mt-1 text-sm text-textSecondary">
                   Busca en el historial de auditoría los pagos que existen en el registro pero no están cargados actualmente.
                 </p>
-                <div className="mt-4">
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={handleBuscarYRestaurarPagos}
+                    disabled={recoveryLoading}
+                    className="rounded-3xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    {recoveryLoading ? 'Restaurando...' : 'Restaurar todos los pagos'}
+                  </button>
                   <button
                     type="button"
                     onClick={handleRecuperarPagosDeAuditoria}
                     disabled={recoveryLoading}
-                    className="rounded-3xl bg-accent px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-600 disabled:opacity-50"
+                    className="rounded-3xl bg-panel px-5 py-3 text-sm font-semibold text-textPrimary ring-1 ring-border transition hover:bg-surface disabled:opacity-50"
                   >
-                    {recoveryLoading ? 'Buscando...' : 'Buscar pagos en auditoría'}
+                    {recoveryLoading ? 'Buscando...' : 'Solo ver pagos faltantes'}
                   </button>
                 </div>
 
@@ -3243,6 +3326,28 @@ function App() {
                     Una vez creada la lista, ve a Productos para asignar el precio de cada variante en esta lista.
                   </p>
                 </div>
+
+                {/* Zona peligrosa */}
+                <div className="mt-6 rounded-3xl border border-red-200 bg-red-50 p-5">
+                  <h4 className="text-sm font-semibold text-red-800">Zona peligrosa</h4>
+                  <p className="mt-1 text-xs text-red-700">Esta acción borra los precios de todos los productos en todas las listas. No afecta los productos ni las facturas existentes.</p>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!window.confirm('¿Borrar TODOS los precios de todos los productos? Esta acción no se puede deshacer.')) return;
+                      try {
+                        await clearAllProductPrices();
+                        setProductPrices([]);
+                        success('Todos los precios fueron borrados');
+                      } catch (err: any) {
+                        error(`Error al borrar precios: ${err.message}`);
+                      }
+                    }}
+                    className="mt-3 rounded-3xl bg-red-600 px-5 py-2 text-sm font-semibold text-white hover:bg-red-700"
+                  >
+                    Borrar todos los precios
+                  </button>
+                </div>
               </div>
             </section>
           )}
@@ -3562,7 +3667,7 @@ function App() {
                   No hay listas de precios configuradas. Creá una en la sección "Listas de precios".
                 </div>
               ) : (
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto max-h-[60vh] overflow-y-auto">
                   <table className="w-full text-sm border-collapse">
                     <thead>
                       <tr className="bg-surface">

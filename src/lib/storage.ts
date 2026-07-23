@@ -74,6 +74,14 @@ export async function upsertProductPrice(productoId: string, listaId: string, pr
   if (error) throw error;
 }
 
+export async function clearAllProductPrices(): Promise<void> {
+  const { error } = await supabase
+    .from('product_prices')
+    .delete()
+    .gte('precio', 0);
+  if (error) throw error;
+}
+
 // Convertir tipos de la app a tipos de la BD
 function clienteToDatabase(cliente: Cliente) {
   return {
