@@ -84,6 +84,9 @@ export function Sidebar({ active, onSelect, currentUserData }: SidebarProps) {
           <h1 className="mt-3 text-3xl font-semibold text-textPrimary">Cuenta corriente</h1>
         </div>
         {navContent}
+        <div className="mt-auto pt-6 text-center">
+          <span className="text-xs text-textSecondary opacity-50">v0.3.0</span>
+        </div>
       </aside>
 
       {/* Botón hamburguesa — solo mobile */}

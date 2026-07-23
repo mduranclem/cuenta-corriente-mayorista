@@ -1,11 +1,11 @@
 FROM node:20-alpine AS builder
+ARG CACHEBUST=3
 WORKDIR /app
 
 COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY . .
-ARG CACHEBUST=2
 RUN npm run build
 
 FROM node:20-alpine AS runner
@@ -16,7 +16,6 @@ RUN npm ci --only=production
 
 COPY --from=builder /app/dist ./dist
 COPY server ./server
-COPY .env.example .env.example
 
 EXPOSE 4000
 ENV NODE_ENV=production
