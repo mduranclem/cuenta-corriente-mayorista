@@ -19,9 +19,9 @@ export function Modal({ title, open, onClose, children }: ModalProps) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 px-4 py-6">
-      <div className="w-full max-w-2xl rounded-3xl bg-white shadow-panel">
-        <div className="flex items-center justify-between gap-4 px-6 pt-6 pb-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-6">
+      <div className="w-full max-w-2xl rounded-3xl bg-panel shadow-panel ring-1 ring-border">
+        <div className="flex items-center justify-between gap-4 border-b border-border px-6 pt-6 pb-5">
           <div>
             <p className="text-sm uppercase text-textSecondary">Modal</p>
             <h2 className="text-2xl font-semibold text-textPrimary">{title}</h2>
@@ -29,7 +29,7 @@ export function Modal({ title, open, onClose, children }: ModalProps) {
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm text-textSecondary transition hover:bg-slate-50"
+            className="rounded-full border border-border bg-surface px-3 py-2 text-sm text-textSecondary transition hover:bg-border"
           >
             Cerrar
           </button>
