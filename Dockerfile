@@ -1,10 +1,11 @@
 FROM node:20-alpine AS builder
-ARG CACHEBUST=6
 WORKDIR /app
 
 COPY package.json package-lock.json ./
 RUN npm ci
 
+ARG CACHEBUST=7
+RUN echo "cachebust=$CACHEBUST"
 COPY . .
 RUN npm run build
 
