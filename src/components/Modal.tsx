@@ -20,8 +20,8 @@ export function Modal({ title, open, onClose, children }: ModalProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 px-4 py-6">
-      <div className="w-full max-w-2xl overflow-hidden rounded-3xl bg-white p-6 shadow-panel">
-        <div className="mb-5 flex items-center justify-between gap-4">
+      <div className="flex w-full max-w-2xl flex-col max-h-[90vh] rounded-3xl bg-white shadow-panel">
+        <div className="flex shrink-0 items-center justify-between gap-4 px-6 pt-6 pb-5">
           <div>
             <p className="text-sm uppercase text-textSecondary">Modal</p>
             <h2 className="text-2xl font-semibold text-textPrimary">{title}</h2>
@@ -34,7 +34,9 @@ export function Modal({ title, open, onClose, children }: ModalProps) {
             Cerrar
           </button>
         </div>
-        {children}
+        <div className="overflow-y-auto px-6 pb-6">
+          {children}
+        </div>
       </div>
     </div>
   );
