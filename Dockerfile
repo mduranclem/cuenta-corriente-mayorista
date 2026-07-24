@@ -1,5 +1,5 @@
 FROM node:20-alpine AS builder
-ARG CACHEBUST=5
+ARG CACHEBUST=6
 WORKDIR /app
 
 COPY package.json package-lock.json ./
