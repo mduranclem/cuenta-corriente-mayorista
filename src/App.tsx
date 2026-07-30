@@ -64,13 +64,16 @@ const formasPago: FormaPago[] = ['Efectivo', 'Transferencia', 'Cheque', 'Tarjeta
 // Helper para campos numéricos sin mostrar 0
 const formatNumberInput = (value: number) => value === 0 ? '' : value.toString();
 
-// Función para imprimir factura
-const printInvoice = (factura: Factura, cliente: Cliente, sena?: number) => {
+// Función para imprimir factura o presupuesto
+const printInvoice = (factura: Factura | Presupuesto, cliente: Cliente, sena?: number, tipo: 'factura' | 'presupuesto' = 'factura') => {
+  const esPresupuesto = tipo === 'presupuesto';
+  const tituloDoc = esPresupuesto ? 'Presupuesto' : 'Comprobante de venta';
+  const etiquetaNumero = esPresupuesto ? 'Presupuesto' : 'Número';
   const printContent = `
     <!DOCTYPE html>
     <html>
     <head>
-      <title>Factura ${factura.id}</title>
+      <title>${esPresupuesto ? 'Presupuesto' : 'Factura'} ${factura.id}</title>
       <style>
         body { font-family: Arial, sans-serif; margin: 20px; background: white; color: black; }
         .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 20px; margin-bottom: 30px; }
@@ -96,7 +99,7 @@ const printInvoice = (factura: Factura, cliente: Cliente, sena?: number) => {
     <body>
       <div class="header">
         <img src="https://i.imgur.com/M4GONM5.png" alt="Logo" class="logo" />
-        <div class="company-name">Comprobante de venta</div>
+        <div class="company-name">${tituloDoc}</div>
       </div>
 
       <div class="invoice-details">
@@ -109,8 +112,8 @@ const printInvoice = (factura: Factura, cliente: Cliente, sena?: number) => {
         </div>
 
         <div class="invoice-info">
-          <div class="section-title">DATOS DE LA FACTURA</div>
-          <div class="info-line"><strong>Número:</strong> #${factura.id.slice(-8).toUpperCase()}</div>
+          <div class="section-title">${esPresupuesto ? 'DATOS DEL PRESUPUESTO' : 'DATOS DE LA FACTURA'}</div>
+          <div class="info-line"><strong>${etiquetaNumero}:</strong> #${factura.id.slice(-8).toUpperCase()}</div>
           <div class="info-line"><strong>Fecha:</strong> ${factura.fecha}</div>
           <div class="info-line"><strong>Total:</strong> ${formatMoney(factura.total)}</div>
         </div>
@@ -273,7 +276,7 @@ function App() {
   const [invoiceNotas, setInvoiceNotas] = useState('');
   const [invoiceSena, setInvoiceSena] = useState(0);
   const [invoiceSenaForma, setInvoiceSenaForma] = useState<FormaPago>('Efectivo');
-  const [descuentoAplicado, setDescuentoAplicado] = useState(false);
+  const [descuentoPct, setDescuentoPct] = useState<0 | 5 | 10>(0);
   const [presupuestos, setPresupuestos] = useState<Presupuesto[]>([]);
   const [exportDeudoresModalOpen, setExportDeudoresModalOpen] = useState(false);
   const [exportPreciosModalOpen, setExportPreciosModalOpen] = useState(false);
@@ -471,8 +474,8 @@ function App() {
   );
 
   const montoDescuento = useMemo(
-    () => descuentoAplicado ? totalFactura * 0.1 : 0,
-    [descuentoAplicado, totalFactura]
+    () => totalFactura * (descuentoPct / 100),
+    [descuentoPct, totalFactura]
   );
 
   const totalConDescuento = useMemo(
@@ -602,8 +605,8 @@ function App() {
       clienteId: invoiceClienteActual.id,
       fecha: invoiceDate,
       items,
-      total: descuentoAplicado ? subtotal * 0.9 : subtotal,
-      descuento: descuentoAplicado ? 0.1 : undefined,
+      total: subtotal * (1 - descuentoPct / 100),
+      descuento: descuentoPct > 0 ? descuentoPct / 100 : undefined,
       notas: invoiceNotas.trim() || undefined,
     };
     const nextFacturas = editingFactura
@@ -646,7 +649,7 @@ function App() {
     setInvoiceNotas('');
     setInvoiceSena(0);
     setInvoiceSenaForma('Efectivo');
-    setDescuentoAplicado(false);
+    setDescuentoPct(0);
     setEditingFactura(null);
     success(editingFactura ? 'Factura actualizada exitosamente' : 'Factura creada exitosamente');
     setPage('historial');
@@ -661,7 +664,8 @@ function App() {
       clienteId: invoiceClienteActual.id,
       fecha: invoiceDate,
       items,
-      total: items.reduce((sum, item) => sum + item.precio * item.cant, 0),
+      total: items.reduce((sum, item) => sum + item.precio * item.cant, 0) * (1 - descuentoPct / 100),
+      descuento: descuentoPct > 0 ? descuentoPct / 100 : undefined,
       notas: invoiceNotas.trim() || undefined,
       estado: 'presupuesto',
     };
@@ -680,6 +684,7 @@ function App() {
     setInvoiceDate(today);
     setInvoiceNotas('');
     setInvoiceSena(0);
+    setDescuentoPct(0);
     setEditingPresupuesto(null);
     success(editingPresupuesto ? 'Presupuesto actualizado' : 'Presupuesto guardado');
     setPage('presupuestos');
@@ -692,6 +697,7 @@ function App() {
     setInvoiceNotas(pres.notas || '');
     setInvoiceSena(0);
     setRows(pres.items.map((item, i) => ({ ...item, rowKey: `r${i}`, query: '' })));
+    setDescuentoPct(pres.descuento ? (Math.round(pres.descuento * 100) as 0 | 5 | 10) : 0);
     setPage('dashboard');
   };
 
@@ -702,6 +708,7 @@ function App() {
       fecha: pres.fecha,
       items: pres.items,
       total: pres.total,
+      descuento: pres.descuento,
       notas: pres.notas,
     };
     const nextFacturas = [factura, ...facturas];
@@ -992,7 +999,7 @@ function App() {
     if (cliente) setInvoiceClient(factura.clienteId);
     setInvoiceDate(factura.fecha);
     setRows(factura.items.map((item, i) => ({ ...item, rowKey: `r${i}`, query: '' })));
-    setDescuentoAplicado(factura.descuento != null && factura.descuento > 0);
+    setDescuentoPct(factura.descuento ? (Math.round(factura.descuento * 100) as 0 | 5 | 10) : 0);
     setPage('dashboard');
   };
 
@@ -2074,7 +2081,7 @@ function App() {
                     </h3>
                   </div>
                   {editingFactura && (
-                    <button type="button" onClick={() => { setEditingFactura(null); setRows([{ rowKey: 'r0', prodId: '', nombre: '', categoria: '', talle: '', color: '', cant: 1, precio: 0, query: '' }]); setInvoiceDate(today); setDescuentoAplicado(false); }} className="rounded-3xl bg-surface px-4 py-2 text-sm text-textPrimary ring-1 ring-border hover:bg-border">
+                    <button type="button" onClick={() => { setEditingFactura(null); setRows([{ rowKey: 'r0', prodId: '', nombre: '', categoria: '', talle: '', color: '', cant: 1, precio: 0, query: '' }]); setInvoiceDate(today); setDescuentoPct(0); }} className="rounded-3xl bg-surface px-4 py-2 text-sm text-textPrimary ring-1 ring-border hover:bg-border">
                       Cancelar edición
                     </button>
                   )}
@@ -2215,10 +2222,10 @@ function App() {
                             />
                           </div>
                           <div className="flex flex-col text-sm">
-                            {descuentoAplicado ? (
+                            {descuentoPct > 0 ? (
                               <>
                                 <span className="text-textSecondary line-through">{formatMoney(row.precio * row.cant)}</span>
-                                <span className="text-green-400 font-medium">{formatMoney(row.precio * row.cant * 0.9)}</span>
+                                <span className="text-green-400 font-medium">{formatMoney(row.precio * row.cant * (1 - descuentoPct / 100))}</span>
                               </>
                             ) : (
                               <span className="text-textPrimary">{formatMoney(row.precio * row.cant)}</span>
@@ -2252,26 +2259,29 @@ function App() {
                     >
                       Añadir
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setDescuentoAplicado(v => !v)}
-                      className={`inline-flex items-center justify-center rounded-3xl px-5 py-3 text-sm font-medium shadow-sm ring-1 transition ${
-                        descuentoAplicado
-                          ? 'bg-accent text-white ring-accent hover:opacity-90'
-                          : 'bg-panel text-textPrimary ring-border hover:bg-surface'
-                      }`}
-                    >
-                      {descuentoAplicado ? '✓ Dto. 10% activo' : 'Aplicar 10% dto.'}
-                    </button>
+                    {([0, 5, 10] as const).map(pct => (
+                      <button
+                        key={pct}
+                        type="button"
+                        onClick={() => setDescuentoPct(pct)}
+                        className={`inline-flex items-center justify-center rounded-3xl px-5 py-3 text-sm font-medium shadow-sm ring-1 transition ${
+                          descuentoPct === pct
+                            ? 'bg-accent text-white ring-accent hover:opacity-90'
+                            : 'bg-panel text-textPrimary ring-border hover:bg-surface'
+                        }`}
+                      >
+                        {pct === 0 ? 'Sin dto.' : `${descuentoPct === pct ? '✓ ' : ''}Dto. ${pct}%`}
+                      </button>
+                    ))}
                   </div>
                   <div className="text-right">
                     {totalUnidades > 0 && (
                       <p className="text-xs text-textSecondary mb-1">{totalUnidades} unidad{totalUnidades !== 1 ? 'es' : ''}</p>
                     )}
-                    {descuentoAplicado ? (
+                    {descuentoPct > 0 ? (
                       <>
                         <p className="text-sm text-textSecondary line-through">{formatMoney(totalFactura)}</p>
-                        <p className="text-xs text-textSecondary">- {formatMoney(montoDescuento)} (10%)</p>
+                        <p className="text-xs text-textSecondary">- {formatMoney(montoDescuento)} ({descuentoPct}%)</p>
                         {invoiceSena > 0 ? (
                           <>
                             <p className="mt-1 text-lg font-semibold text-green-400 line-through">{formatMoney(totalConDescuento)}</p>
@@ -3392,6 +3402,10 @@ function App() {
                                 <button onClick={() => enviarWhatsAppPresupuesto(pres)}
                                   className="mr-2 rounded-3xl bg-green-600/20 px-3 py-1.5 text-xs font-semibold text-green-400 hover:bg-green-600/30">
                                   WhatsApp
+                                </button>
+                                <button onClick={() => cliente && printInvoice(pres, cliente, undefined, 'presupuesto')}
+                                  className="mr-2 rounded-3xl bg-surface border border-border px-3 py-1.5 text-xs text-textPrimary hover:bg-border">
+                                  🖨️ Imprimir
                                 </button>
                                 <button onClick={async () => { await deletePresupuesto(pres.id); setPresupuestos(prev => prev.filter(p => p.id !== pres.id)); }}
                                   className="rounded-3xl bg-red-900/40 px-3 py-1.5 text-xs text-red-400 hover:bg-red-900">

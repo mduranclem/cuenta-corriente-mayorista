@@ -57,6 +57,7 @@ export interface Presupuesto {
   fecha: string;
   items: FacturaItem[];
   total: number;
+  descuento?: number;
   notas?: string;
   estado: 'presupuesto';
 }

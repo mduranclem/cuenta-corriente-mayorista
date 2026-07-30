@@ -877,6 +877,7 @@ export async function loadPresupuestos(): Promise<Presupuesto[]> {
       clienteId: p.cliente_id,
       fecha: p.fecha,
       total: parseFloat(p.total),
+      descuento: p.descuento != null ? parseFloat(p.descuento) : undefined,
       notas: p.notas || '',
       estado: 'presupuesto' as const,
       items: (itemsByPres[p.id] || []).map((item: any) => ({
@@ -901,6 +902,7 @@ export async function savePresupuesto(p: Presupuesto): Promise<void> {
     cliente_id: p.clienteId,
     fecha: p.fecha,
     total: p.total,
+    descuento: p.descuento ?? null,
     notas: p.notas || null,
     estado: p.estado,
   });
