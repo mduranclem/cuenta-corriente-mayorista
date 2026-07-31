@@ -276,7 +276,7 @@ function App() {
   const [invoiceNotas, setInvoiceNotas] = useState('');
   const [invoiceSena, setInvoiceSena] = useState(0);
   const [invoiceSenaForma, setInvoiceSenaForma] = useState<FormaPago>('Efectivo');
-  const [descuentoPct, setDescuentoPct] = useState<0 | 5 | 10>(0);
+  const [descuentoPct, setDescuentoPct] = useState<0 | 5 | 10 | 15>(0);
   const [presupuestos, setPresupuestos] = useState<Presupuesto[]>([]);
   const [exportDeudoresModalOpen, setExportDeudoresModalOpen] = useState(false);
   const [exportPreciosModalOpen, setExportPreciosModalOpen] = useState(false);
@@ -697,7 +697,7 @@ function App() {
     setInvoiceNotas(pres.notas || '');
     setInvoiceSena(0);
     setRows(pres.items.map((item, i) => ({ ...item, rowKey: `r${i}`, query: '' })));
-    setDescuentoPct(pres.descuento ? (Math.round(pres.descuento * 100) as 0 | 5 | 10) : 0);
+    setDescuentoPct(pres.descuento ? (Math.round(pres.descuento * 100) as 0 | 5 | 10 | 15) : 0);
     setPage('dashboard');
   };
 
@@ -999,7 +999,7 @@ function App() {
     if (cliente) setInvoiceClient(factura.clienteId);
     setInvoiceDate(factura.fecha);
     setRows(factura.items.map((item, i) => ({ ...item, rowKey: `r${i}`, query: '' })));
-    setDescuentoPct(factura.descuento ? (Math.round(factura.descuento * 100) as 0 | 5 | 10) : 0);
+    setDescuentoPct(factura.descuento ? (Math.round(factura.descuento * 100) as 0 | 5 | 10 | 15) : 0);
     setPage('dashboard');
   };
 
@@ -2259,7 +2259,7 @@ function App() {
                     >
                       Añadir
                     </button>
-                    {([0, 5, 10] as const).map(pct => (
+                    {([0, 5, 10, 15] as const).map(pct => (
                       <button
                         key={pct}
                         type="button"
