@@ -5,9 +5,11 @@ interface ModalProps {
   open: boolean;
   onClose: () => void;
   children: ReactNode;
+  /** 'wide' para planillas y tablas anchas. */
+  size?: 'default' | 'wide';
 }
 
-export function Modal({ title, open, onClose, children }: ModalProps) {
+export function Modal({ title, open, onClose, children, size = 'default' }: ModalProps) {
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
@@ -20,7 +22,11 @@ export function Modal({ title, open, onClose, children }: ModalProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-6">
-      <div className="w-full max-w-2xl rounded-3xl bg-panel shadow-panel ring-1 ring-border">
+      <div
+        className={`w-full rounded-3xl bg-panel shadow-panel ring-1 ring-border ${
+          size === 'wide' ? 'max-w-5xl' : 'max-w-2xl'
+        }`}
+      >
         <div className="flex items-center justify-between gap-4 border-b border-border px-6 pt-6 pb-5">
           <div>
             <p className="text-sm uppercase text-textSecondary">Modal</p>

@@ -27,7 +27,8 @@ DECLARE t text;
 BEGIN
   FOREACH t IN ARRAY ARRAY['clientes','productos','listas_precios','product_prices',
                             'facturas','factura_items','pagos','presupuestos',
-                            'presupuesto_items','usuarios','auditoria']
+                            'presupuesto_items','usuarios','auditoria',
+                            'catalogo_productos','catalogo_precios']
   LOOP
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format('DROP POLICY IF EXISTS anon_full_access ON public.%I', t);

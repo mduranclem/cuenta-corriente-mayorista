@@ -1,9 +1,12 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Modal } from './components/Modal';
 import { Toast } from './components/Toast';
 import { useToast } from './hooks/useToast';
-import type { Cliente, Factura, FacturaItem, FormaPago, ListaPrecio, Pago, ProductPrice, Producto, Presupuesto } from './types';
+import type { CatalogoPrecio, CatalogoProducto, Cliente, Factura, FacturaItem, FormaPago, ListaPrecio, Pago, Producto, Presupuesto, RangoTalle, Variedad } from './types';
+import { RANGOS_TALLE, VARIEDADES } from './types';
+import { CuentaCorrientePlanilla } from './components/CuentaCorrientePlanilla';
+import { resumirCuentasPorCliente } from './lib/cuentaCorriente';
 import type { BackupPayload } from './lib/storage';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -19,9 +22,6 @@ import {
   deleteListaPrecio,
   loadPagos,
   loadProductos,
-  loadProductPrices,
-  upsertProductPrice,
-  clearAllProductPrices,
   saveClientes,
   saveCliente,
   deleteCliente,
@@ -31,8 +31,6 @@ import {
   savePago,
   deletePago,
   savePagos,
-  saveProducto,
-  deleteProducto,
   saveProductos,
   logAudit,
   obtenerAuditoria,
@@ -48,6 +46,12 @@ import {
   loadPresupuestos,
   savePresupuesto,
   deletePresupuesto,
+  loadCatalogoProductos,
+  loadCatalogoPrecios,
+  saveCatalogoProducto,
+  deleteCatalogoProducto,
+  upsertCatalogoPrecio,
+  deleteCatalogoPrecio,
 } from './lib/storage';
 
 type Page = 'inicio' | 'dashboard' | 'clientes' | 'cuenta' | 'historial' | 'nuevo-cliente' | 'productos' | 'backup' | 'login' | 'admin' | 'listas-precios' | 'auditoria' | 'presupuestos' | 'reportes';
@@ -63,6 +67,15 @@ const formasPago: FormaPago[] = ['Efectivo', 'Transferencia', 'Cheque', 'Tarjeta
 
 // Helper para campos numéricos sin mostrar 0
 const formatNumberInput = (value: number) => value === 0 ? '' : value.toString();
+
+// Descripción de un ítem: usa Variedad + Rango de talle si están, y si no
+// cae en los campos viejos (ítems anteriores a la migración del catálogo).
+const describirItem = (item: FacturaItem): string => {
+  const partes = item.variedad || item.rangoTalle
+    ? [item.variedad, item.rangoTalle]
+    : [item.categoria, item.talle, item.color];
+  return partes.filter(Boolean).join(' • ');
+};
 
 // Función para imprimir factura o presupuesto
 const printInvoice = (factura: Factura | Presupuesto, cliente: Cliente, sena?: number, tipo: 'factura' | 'presupuesto' = 'factura') => {
@@ -140,7 +153,7 @@ const printInvoice = (factura: Factura | Presupuesto, cliente: Cliente, sena?: n
             return `
             <tr>
               <td><strong>${item.nombre}</strong></td>
-              <td>${item.categoria} • ${item.talle} • ${item.color}</td>
+              <td>${describirItem(item)}</td>
               <td class="text-right">${item.cant}</td>
               <td class="text-right">${precioUnit}</td>
               <td class="text-right">${subtotalItem}</td>
@@ -208,11 +221,7 @@ function App() {
   const [rows, setRows] = useState<RowFactura[]>([
     { rowKey: 'r0', prodId: '', nombre: '', categoria: '', talle: '', color: '', cant: 1, precio: 0, query: '' },
   ]);
-  const [productFilter, setProductFilter] = useState('');
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
-  const [productEdit, setProductEdit] = useState<Producto | null>(null);
   const [productSearch, setProductSearch] = useState('');
-  const [productModalOpen, setProductModalOpen] = useState(false);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentClienteId, setPaymentClienteId] = useState('');
   const [paymentDate, setPaymentDate] = useState(today);
@@ -225,12 +234,6 @@ function App() {
   const [newClientCat, setNewClientCat] = useState<string>('general');
   const [newClientNotas, setNewClientNotas] = useState('');
   const [editingClient, setEditingClient] = useState<Cliente | null>(null);
-  const [newProducto, setNewProducto] = useState({
-    nombre: '',
-    categoria: '',
-    talle: '',
-    color: '',
-  });
   const [backupText, setBackupText] = useState('');
   const [backupMessage, setBackupMessage] = useState('');
   const [backupError, setBackupError] = useState('');
@@ -238,9 +241,6 @@ function App() {
   const [editingFactura, setEditingFactura] = useState<Factura | null>(null);
   const [editingPresupuesto, setEditingPresupuesto] = useState<Presupuesto | null>(null);
   const [listasPrecios, setListasPrecios] = useState<ListaPrecio[]>([]);
-  const [productPrices, setProductPrices] = useState<ProductPrice[]>([]);
-  const [priceMatrixGroup, setPriceMatrixGroup] = useState<string | null>(null);
-  const [editingPriceMap, setEditingPriceMap] = useState<Record<string, Record<string, string>>>({});
   const [invoiceClientSearch, setInvoiceClientSearch] = useState('');
   const [invoiceClientDropdownOpen, setInvoiceClientDropdownOpen] = useState(false);
   const [newListaNombre, setNewListaNombre] = useState('');
@@ -279,8 +279,6 @@ function App() {
   const [descuentoPct, setDescuentoPct] = useState<0 | 5 | 10 | 15>(0);
   const [presupuestos, setPresupuestos] = useState<Presupuesto[]>([]);
   const [exportDeudoresModalOpen, setExportDeudoresModalOpen] = useState(false);
-  const [exportPreciosModalOpen, setExportPreciosModalOpen] = useState(false);
-  const [exportPreciosLista, setExportPreciosLista] = useState('');
   const [reporteDesde, setReporteDesde] = useState('');
   const [reporteHasta, setReporteHasta] = useState('');
   const [reporteDesdeAplicado, setReporteDesdeAplicado] = useState('');
@@ -289,6 +287,15 @@ function App() {
   const [recoveryPagos, setRecoveryPagos] = useState<Pago[]>([]);
   const [recoveryLoading, setRecoveryLoading] = useState(false);
   const [recoveryDone, setRecoveryDone] = useState(false);
+  const [catalogoProductos, setCatalogoProductos] = useState<CatalogoProducto[]>([]);
+  const [catalogoPrecios, setCatalogoPrecios] = useState<CatalogoPrecio[]>([]);
+  const [catalogoModalProducto, setCatalogoModalProducto] = useState<CatalogoProducto | null>(null);
+  const [catalogoDraft, setCatalogoDraft] = useState<Record<string, string>>({});
+  const [catalogoNombreModalOpen, setCatalogoNombreModalOpen] = useState(false);
+  const [catalogoNombreEdit, setCatalogoNombreEdit] = useState<CatalogoProducto | null>(null);
+  const [catalogoNombre, setCatalogoNombre] = useState('');
+  const [catalogoFilter, setCatalogoFilter] = useState('');
+  const [cuentaDetalleCliente, setCuentaDetalleCliente] = useState<Cliente | null>(null);
   const [dataLoading, setDataLoading] = useState(false);
   const [dataError, setDataError] = useState(false);
 
@@ -382,22 +389,24 @@ function App() {
     setDataError(false);
     try {
       await testConnection();
-      const [clientesData, productosData, facturasData, pagosData, listasData, pricesData, presupuestosData] = await Promise.all([
+      const [clientesData, productosData, facturasData, pagosData, listasData, presupuestosData, catProductosData, catPreciosData] = await Promise.all([
         loadClientes(),
         loadProductos(),
         loadFacturas(),
         loadPagos(),
         loadListasPrecios(),
-        loadProductPrices(),
         loadPresupuestos(),
+        loadCatalogoProductos(),
+        loadCatalogoPrecios(),
       ]);
       setClientes(clientesData);
       setProductos(productosData);
       setFacturas(facturasData);
       setPagos(pagosData);
       setListasPrecios(listasData);
-      setProductPrices(pricesData);
       setPresupuestos(presupuestosData);
+      setCatalogoProductos(catProductosData);
+      setCatalogoPrecios(catPreciosData);
     } catch (err) {
       console.error('Error cargando datos:', err);
       setDataError(true);
@@ -501,56 +510,89 @@ function App() {
     return { deudaTotal, clientesConDeuda, ultimas5Facturas, ultimos3Pagos };
   }, [clientes, facturas, pagos, orderedFacturas]);
 
-  const clientesConDeudaDetalle = useMemo(() =>
-    clientes
-      .map(c => {
-        const totalF = facturas.filter(f => f.clienteId === c.id).reduce((s, f) => s + f.total, 0);
-        const totalP = pagos.filter(p => p.clienteId === c.id).reduce((s, p) => s + p.monto, 0);
-        return { cliente: c, saldo: totalF - totalP };
-      })
-      .filter(x => x.saldo > 0)
-      .sort((a, b) => b.saldo - a.saldo),
+  const cuentasConDeuda = useMemo(
+    () => resumirCuentasPorCliente(clientes, facturas, pagos),
     [clientes, facturas, pagos]
   );
+
+  // Usado por los export de deudores (PDF / Excel)
+  const clientesConDeudaDetalle = cuentasConDeuda;
 
   const getListaById = (id: string): ListaPrecio =>
     listasPrecios.find(l => l.id === id) ?? { id: 'general', nombre: 'General' };
 
-  const findProductPrice = (productoId: string, listaId: string): number => {
-    const pp = productPrices.find(p => p.productoId === productoId && p.listaId === listaId);
-    return pp?.precio ?? 0;
-  };
-
-  const updateRowProduct = (rowKey: string, product: Producto) => {
-    const listaId = invoiceClienteActual?.cat ?? 'general';
-    const precio = findProductPrice(product.id, listaId);
-    setRows((rows) =>
-      rows.map((row) =>
-        row.rowKey !== rowKey
-          ? row
-          : {
-              ...row,
-              prodId: product.id,
-              nombre: product.nombre,
-              categoria: product.categoria,
-              talle: product.talle,
-              color: product.color,
-              precio,
-              query: '',
-            }
-      )
+  /** Precio unitario de la combinación Producto + Variedad + Rango de talle. */
+  const findCatalogoPrecio = (
+    productoId: string,
+    variedad: Variedad,
+    rangoTalle: RangoTalle
+  ): number => {
+    const cp = catalogoPrecios.find(
+      p => p.productoId === productoId && p.variedad === variedad && p.rangoTalle === rangoTalle
     );
-    setTimeout(() => setRows((prevRows) => [...prevRows]), 10);
+    return cp?.precio ?? 0;
   };
 
-  const updateClientPrices = (clienteId: string) => {
-    const client = clientes.find((item) => item.id === clienteId);
-    if (!client) return;
-    const listaId = client.cat;
+  const catalogoProductoById = (id: string) => catalogoProductos.find(p => p.id === id);
+
+  /**
+   * Aviso de precio faltante. Solo aplica a productos del catálogo: las
+   * facturas viejas conservan su precio original y no se avisa nada.
+   */
+  const avisoPrecioFaltante = (row: RowFactura): string | null => {
+    if (!row.prodId || !row.variedad || !row.rangoTalle) return null;
+    const producto = catalogoProductoById(row.prodId);
+    if (!producto) return null;
+    if (findCatalogoPrecio(row.prodId, row.variedad, row.rangoTalle) > 0) return null;
+    return `Falta cargar el precio para ${producto.nombre} · ${row.variedad} · ${row.rangoTalle}`;
+  };
+
+  const updateRowProduct = (rowKey: string, product: CatalogoProducto) => {
     setRows((rows) =>
       rows.map((row) => {
-        if (!row.prodId) return row;
-        return { ...row, precio: findProductPrice(row.prodId, listaId) };
+        if (row.rowKey !== rowKey) return row;
+        const variedad = row.variedad ?? VARIEDADES[0];
+        const rangoTalle = row.rangoTalle ?? RANGOS_TALLE[0];
+        return {
+          ...row,
+          prodId: product.id,
+          nombre: product.nombre,
+          variedad,
+          rangoTalle,
+          // Espejo de los campos viejos para que el historial y las impresiones
+          // anteriores a la migración sigan mostrando algo coherente.
+          categoria: variedad,
+          talle: rangoTalle,
+          color: '',
+          precio: findCatalogoPrecio(product.id, variedad, rangoTalle),
+          query: '',
+        };
+      })
+    );
+  };
+
+  /** Cambia variedad o rango y vuelve a buscar el precio de la combinación. */
+  const updateRowCombinacion = (
+    rowKey: string,
+    campo: 'variedad' | 'rangoTalle',
+    valor: Variedad | RangoTalle
+  ) => {
+    setRows((rows) =>
+      rows.map((row) => {
+        if (row.rowKey !== rowKey) return row;
+        const variedad = (campo === 'variedad' ? valor : row.variedad ?? VARIEDADES[0]) as Variedad;
+        const rangoTalle = (campo === 'rangoTalle' ? valor : row.rangoTalle ?? RANGOS_TALLE[0]) as RangoTalle;
+        // Un ítem de una factura vieja no está en el catálogo: se respeta el
+        // precio con el que se facturó en su momento.
+        const esDelCatalogo = catalogoProductos.some(p => p.id === row.prodId);
+        return {
+          ...row,
+          variedad,
+          rangoTalle,
+          categoria: variedad,
+          talle: rangoTalle,
+          precio: esDelCatalogo ? findCatalogoPrecio(row.prodId, variedad, rangoTalle) : row.precio,
+        };
       })
     );
   };
@@ -559,16 +601,12 @@ function App() {
     setInvoiceClient(value);
     setInvoiceClientSearch('');
     setInvoiceClientDropdownOpen(false);
-    updateClientPrices(value);
   };
 
-  const filteredProducts = (query: string) => {
+  const filteredProducts = (query: string): CatalogoProducto[] => {
     const text = query.toLowerCase().trim();
-    if (!text || text.length === 0) return []; // No mostrar productos si no hay búsqueda
-    return productos.filter((product) =>
-      [product.nombre, product.categoria, product.talle, product.color]
-        .some((value) => value.toLowerCase().includes(text))
-    );
+    if (!text) return [];
+    return catalogoProductos.filter((product) => product.nombre.toLowerCase().includes(text));
   };
 
   const handleRowChange = (rowKey: string, field: keyof RowFactura, value: string | number) => {
@@ -719,25 +757,6 @@ function App() {
     success('Presupuesto convertido en factura');
   };
 
-  const enviarWhatsAppResumen = (cliente: Cliente) => {
-    if (!cliente.tel) {
-      error('Este cliente no tiene teléfono registrado');
-      return;
-    }
-    const clienteFacts = facturas.filter(f => f.clienteId === cliente.id).sort((a, b) => b.fecha.localeCompare(a.fecha));
-    const clientePagos = pagos.filter(p => p.clienteId === cliente.id);
-    const totalCompradoC = clienteFacts.reduce((s, f) => s + f.total, 0);
-    const totalPagadoC = clientePagos.reduce((s, p) => s + p.monto, 0);
-    const saldoC = totalCompradoC - totalPagadoC;
-    const ultimas = clienteFacts.slice(0, 3);
-    const lineasFacturas = ultimas.map(f => `- ${f.fecha} · ${f.items.length} item${f.items.length !== 1 ? 's' : ''} · ${formatMoney(f.total)}`).join('\n');
-    const wv = { wave: '\u{1F44B}', box: '\u{1F4E6}', money: '\u{1F4B0}', clipboard: '\u{1F4CB}', hands: '\u{1F64C}' };
-    const mensaje = `Hola ${cliente.nombre} ${wv.wave}\nTe enviamos un resumen de tu cuenta corriente:\n\n${wv.box} Total comprado: ${formatMoney(totalCompradoC)}\n${wv.money} Total pagado: ${formatMoney(totalPagadoC)}\n${wv.clipboard} Saldo pendiente: ${formatMoney(saldoC)}\n\nUltimas facturas:\n${lineasFacturas || '- Sin facturas'}\n\nCualquier consulta, estamos a disposicion ${wv.hands}`;
-    const tel = cliente.tel.replace(/\D/g, '');
-    const url = `https://wa.me/54${tel}?text=${encodeURIComponent(mensaje)}`;
-    window.open(url, '_blank');
-  };
-
   const enviarWhatsAppPresupuesto = (pres: Presupuesto) => {
     const cliente = clientes.find(c => c.id === pres.clienteId);
     if (!cliente) return;
@@ -793,51 +812,26 @@ function App() {
     XLSX.writeFile(wb, 'deudores.xlsx');
   };
 
-  const exportPreciosPDF = (listaId: string) => {
-    const lista = listasPrecios.find(l => l.id === listaId);
-    if (!lista) return;
-    const doc = new jsPDF();
-    doc.setFontSize(18);
-    doc.text(`Lista de Precios: ${lista.nombre}`, 14, 20);
-    doc.setFontSize(10);
-    doc.text(`Generado: ${new Date().toLocaleDateString('es-AR')}`, 14, 28);
-    const filteredProductos = productos.filter(p => {
-      const pp = productPrices.find(x => x.productoId === p.id && x.listaId === listaId);
-      return pp && pp.precio > 0;
-    });
-    const rowsData = filteredProductos.map(p => {
-      const pp = productPrices.find(x => x.productoId === p.id && x.listaId === listaId);
-      return [p.nombre, p.categoria, p.talle, p.color || '—', formatMoney(pp?.precio ?? 0)];
-    });
-    autoTable(doc, {
-      head: [['Producto', 'Categoría', 'Talle', 'Color', 'Precio']],
-      body: rowsData,
-      startY: 35,
-    });
-    doc.save(`lista-precios-${lista.nombre.toLowerCase()}.pdf`);
-  };
-
-  const exportPreciosExcel = (listaId: string) => {
-    const lista = listasPrecios.find(l => l.id === listaId);
-    if (!lista) return;
-    const filteredProductos = productos.filter(p => {
-      const pp = productPrices.find(x => x.productoId === p.id && x.listaId === listaId);
-      return pp && pp.precio > 0;
-    });
-    const data = filteredProductos.map(p => {
-      const pp = productPrices.find(x => x.productoId === p.id && x.listaId === listaId);
-      return {
-        'Producto': p.nombre,
-        'Categoría': p.categoria,
-        'Talle': p.talle,
-        'Color': p.color || '',
-        'Precio': pp?.precio ?? 0,
-      };
-    });
+  const exportarCatalogoExcel = () => {
+    const data: Record<string, string | number>[] = [];
+    for (const producto of catalogoProductos) {
+      for (const variedad of VARIEDADES) {
+        for (const rango of RANGOS_TALLE) {
+          const precio = findCatalogoPrecio(producto.id, variedad, rango);
+          data.push({
+            'Producto': producto.nombre,
+            'Variedad': variedad,
+            'Rango de talle': rango,
+            'Precio unitario': precio || '',
+          });
+        }
+      }
+    }
+    if (data.length === 0) { error('No hay productos para exportar'); return; }
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, lista.nombre);
-    XLSX.writeFile(wb, `lista-precios-${lista.nombre.toLowerCase()}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, 'Precios');
+    XLSX.writeFile(wb, 'lista-de-precios.xlsx');
   };
 
   const handleNewClient = async () => {
@@ -1037,91 +1031,114 @@ function App() {
     }
   };
 
-  const handleProductSave = async () => {
-    const trimmed = {
-      nombre: newProducto.nombre.trim(),
-      categoria: newProducto.categoria.trim(),
-      talle: newProducto.talle.trim(),
-      color: newProducto.color.trim(),
-    };
+  // ---- Catálogo: Producto x Variedad x Rango de talle ----
 
-    if (!trimmed.nombre) { error('❌ ERROR: El nombre del producto es obligatorio'); return; }
-    if (!trimmed.categoria) { error('❌ ERROR: La categoría del producto es obligatoria'); return; }
-    if (!trimmed.talle) { error('❌ ERROR: El talle del producto es obligatorio'); return; }
-    if (!trimmed.color) { error('❌ ERROR: El color del producto es obligatorio'); return; }
+  const slugCatalogo = (nombre: string) =>
+    'cat-' + nombre.normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+  const handleCatalogoNombreSave = async () => {
+    const nombre = catalogoNombre.trim();
+    if (!nombre) { error('El nombre del producto es obligatorio'); return; }
+
+    const duplicado = catalogoProductos.some(
+      p => p.nombre.toLowerCase() === nombre.toLowerCase() && p.id !== catalogoNombreEdit?.id
+    );
+    if (duplicado) { error(`Ya existe un producto llamado "${nombre}"`); return; }
 
     try {
-      if (productEdit) {
-        const productoActualizado = { ...productEdit, ...trimmed };
-        const nextProductos = productos.map((item) =>
-          item.id === productEdit.id ? productoActualizado : item
-        );
-        setProductos(nextProductos);
-        await saveProducto(productoActualizado);
-
+      if (catalogoNombreEdit) {
+        const actualizado = { ...catalogoNombreEdit, nombre };
+        await saveCatalogoProducto(actualizado);
+        setCatalogoProductos(prev => prev.map(p => (p.id === actualizado.id ? actualizado : p)));
         if (currentUser) {
-          const antes = { nombre: productEdit.nombre, categoria: productEdit.categoria, talle: productEdit.talle, color: productEdit.color };
-          const despues = { nombre: trimmed.nombre, categoria: trimmed.categoria, talle: trimmed.talle, color: trimmed.color };
-          await logAudit(currentUser, 'PRODUCTO_EDITADO', 'producto', productEdit.id, antes, despues);
+          await logAudit(currentUser, 'PRODUCTO_EDITADO', 'producto', actualizado.id,
+            { nombre: catalogoNombreEdit.nombre }, { nombre });
         }
-
-        setProductEdit(null);
-        success(`✅ PRODUCTO ACTUALIZADO: ${trimmed.nombre} se actualizó correctamente`);
+        success(`Producto renombrado a "${nombre}"`);
       } else {
-        const nuevo: Producto = {
-          id: `p${Date.now()}`,
-          ...trimmed,
-          precio: 0,
-        };
-        const nextProductos = [nuevo, ...productos];
-        setProductos(nextProductos);
-        await saveProducto(nuevo);
-
+        const base = slugCatalogo(nombre);
+        const id = catalogoProductos.some(p => p.id === base) ? `${base}-${Date.now()}` : base;
+        const orden = catalogoProductos.reduce((max, p) => Math.max(max, p.orden), 0) + 10;
+        const nuevo: CatalogoProducto = { id, nombre, orden };
+        await saveCatalogoProducto(nuevo);
+        setCatalogoProductos(prev => [...prev, nuevo]);
         if (currentUser) {
-          const despues = { nombre: nuevo.nombre, categoria: nuevo.categoria, talle: nuevo.talle, color: nuevo.color };
-          await logAudit(currentUser, 'PRODUCTO_CREADO', 'producto', nuevo.id, null, despues);
+          await logAudit(currentUser, 'PRODUCTO_CREADO', 'producto', id, null, { nombre });
         }
+        success(`Producto "${nombre}" agregado — ahora cargá sus precios`);
+        setCatalogoModalProducto(nuevo);
+        setCatalogoDraft({});
+      }
+      setCatalogoNombre('');
+      setCatalogoNombreEdit(null);
+      setCatalogoNombreModalOpen(false);
+    } catch (err: any) {
+      error(`No se pudo guardar el producto: ${err.message ?? 'error desconocido'}`);
+    }
+  };
 
-        success(`✅ PRODUCTO AGREGADO: ${trimmed.nombre} — ahora configura sus precios en la tabla de precios`);
+  const handleCatalogoDelete = async (producto: CatalogoProducto) => {
+    const cargados = catalogoPrecios.filter(cp => cp.productoId === producto.id).length;
+    const aviso = cargados > 0
+      ? `
+
+Se borrarán también sus ${cargados} precio${cargados !== 1 ? 's' : ''} cargado${cargados !== 1 ? 's' : ''}.`
+      : '';
+    if (!window.confirm(`¿Eliminar el producto "${producto.nombre}"?${aviso}`)) return;
+
+    try {
+      await deleteCatalogoProducto(producto.id);
+      setCatalogoProductos(prev => prev.filter(p => p.id !== producto.id));
+      setCatalogoPrecios(prev => prev.filter(cp => cp.productoId !== producto.id));
+      if (currentUser) {
+        await logAudit(currentUser, 'PRODUCTO_ELIMINADO', 'producto', producto.id, { nombre: producto.nombre }, null);
+      }
+      success(`Producto "${producto.nombre}" eliminado`);
+    } catch (err: any) {
+      error(`No se pudo eliminar: ${err.message ?? 'error desconocido'}`);
+    }
+  };
+
+  /** Guarda una celda de la planilla de precios. Vacío = borrar el precio. */
+  const handleCatalogoPrecioSave = async (
+    productoId: string,
+    variedad: Variedad,
+    rangoTalle: RangoTalle,
+    valor: string
+  ) => {
+    const limpio = valor.trim();
+    const anterior = findCatalogoPrecio(productoId, variedad, rangoTalle);
+
+    try {
+      if (limpio === '') {
+        if (anterior === 0) return;
+        await deleteCatalogoPrecio(productoId, variedad, rangoTalle);
+        setCatalogoPrecios(prev => prev.filter(
+          cp => !(cp.productoId === productoId && cp.variedad === variedad && cp.rangoTalle === rangoTalle)
+        ));
+        return;
       }
 
-      setNewProducto({ nombre: '', categoria: '', talle: '', color: '' });
-      setProductModalOpen(false);
+      const precio = Number(limpio);
+      if (!Number.isFinite(precio) || precio < 0) { error('El precio debe ser un número válido'); return; }
+      if (precio === anterior) return;
+
+      await upsertCatalogoPrecio(productoId, variedad, rangoTalle, precio);
+      setCatalogoPrecios(prev => [
+        ...prev.filter(cp => !(cp.productoId === productoId && cp.variedad === variedad && cp.rangoTalle === rangoTalle)),
+        { productoId, variedad, rangoTalle, precio },
+      ]);
     } catch (err: any) {
-      console.error('❌ Error manejando producto:', err);
-      error(`❌ ERROR: No se pudo ${productEdit ? 'actualizar' : 'agregar'} el producto. ${err.message || 'Intenta nuevamente.'}`);
+      error(`No se pudo guardar el precio: ${err.message ?? 'error desconocido'}`);
     }
   };
 
-  const handleProductEdit = (item: Producto) => {
-    setProductEdit(item);
-    setProductModalOpen(true);
-    setNewProducto({
-      nombre: item.nombre,
-      categoria: item.categoria,
-      talle: item.talle,
-      color: item.color,
-    });
-  };
-
-  const handleProductDelete = async (id: string) => {
-    const producto = productos.find(p => p.id === id);
-    if (!producto) return;
-
-    if (!window.confirm(`¿Estás seguro de eliminar "${producto.nombre}" (${producto.talle})?`)) return;
-
-    const next = productos.filter((item) => item.id !== id);
-    setProductos(next);
-    setProductPrices(prev => prev.filter(pp => pp.productoId !== id));
-    await deleteProducto(id);
-
-    if (currentUser) {
-      const antes = { nombre: producto.nombre, categoria: producto.categoria, talle: producto.talle, color: producto.color };
-      await logAudit(currentUser, 'PRODUCTO_ELIMINADO', 'producto', id, antes, null);
-    }
-
-    success('Producto eliminado exitosamente');
-  };
+  const catalogoFiltrado = useMemo(() => {
+    const text = catalogoFilter.trim().toLowerCase();
+    if (!text) return catalogoProductos;
+    return catalogoProductos.filter(p => p.nombre.toLowerCase().includes(text));
+  }, [catalogoProductos, catalogoFilter]);
 
   const handleBackupDownload = async () => {
     const data = await exportBackup();
@@ -1597,27 +1614,6 @@ function App() {
     clienteSearch === '' || c.nombre.toLowerCase().includes(clienteSearch.toLowerCase())
   );
 
-  const productGroups = useMemo(() => {
-    const words = productFilter.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    const filtered = productos.filter(item => {
-      if (words.length === 0) return true;
-      const fields = [item.nombre, item.categoria, item.talle, item.color].map(v => v.toLowerCase());
-      return words.every(word => fields.some(f => f.includes(word)));
-    });
-    const map = new Map<string, Producto[]>();
-    for (const p of filtered) {
-      const key = `${p.nombre}||${p.categoria}`;
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(p);
-    }
-    return Array.from(map.entries()).map(([key, variants]) => ({
-      key,
-      nombre: variants[0].nombre,
-      categoria: variants[0].categoria,
-      variants,
-    }));
-  }, [productos, productFilter]);
-
   const facturasFiltradas = useMemo(() => {
     return facturas.filter(f => {
       if (reporteDesdeAplicado && f.fecha < reporteDesdeAplicado) return false;
@@ -1639,8 +1635,9 @@ function App() {
     const map: Record<string, { nombre: string; talle: string; unidades: number; total: number }> = {};
     facturasFiltradas.forEach(f => {
       f.items.forEach(item => {
-        const key = `${item.nombre}||${item.talle}`;
-        if (!map[key]) map[key] = { nombre: item.nombre, talle: item.talle, unidades: 0, total: 0 };
+        const descripcion = describirItem(item);
+        const key = `${item.nombre}||${descripcion}`;
+        if (!map[key]) map[key] = { nombre: item.nombre, talle: descripcion, unidades: 0, total: 0 };
         map[key].unidades += item.cant;
         map[key].total += item.cant * item.precio;
       });
@@ -2125,8 +2122,10 @@ function App() {
                   </div>
                 </div>
                 <div className="mt-6 overflow-visible rounded-3xl border border-border">
-                  <div className="grid grid-cols-[2fr_80px_120px_120px_80px] gap-4 bg-surface px-5 py-4 text-sm uppercase tracking-[0.12em] text-textSecondary">
+                  <div className="grid grid-cols-[minmax(180px,2fr)_130px_130px_70px_120px_120px_80px] gap-3 bg-surface px-5 py-4 text-xs uppercase tracking-[0.12em] text-textSecondary">
                     <span>Producto</span>
+                    <span>Variedad</span>
+                    <span>Rango de talle</span>
                     <span>Cant.</span>
                     <span>Precio</span>
                     <span>Subtotal</span>
@@ -2135,8 +2134,9 @@ function App() {
                   <div className="divide-y divide-slate-200 bg-panel overflow-visible">
                     {rows.map((row) => {
                       const matches = filteredProducts(row.query || '');
+                      const aviso = avisoPrecioFaltante(row);
                       return (
-                        <div key={row.rowKey} className="grid grid-cols-[2fr_80px_120px_120px_80px] gap-4 px-5 py-4 items-start">
+                        <div key={row.rowKey} className="grid grid-cols-[minmax(180px,2fr)_130px_130px_70px_120px_120px_80px] gap-3 px-5 py-4 items-start">
                           <div className="relative">
                             <input
                               value={row.prodId ? row.nombre : row.query}
@@ -2164,6 +2164,7 @@ function App() {
                                   handleRowChange(row.rowKey, 'talle', '');
                                   handleRowChange(row.rowKey, 'color', '');
                                   handleRowChange(row.rowKey, 'query', '');
+                                  handleRowChange(row.rowKey, 'precio', 0);
                                 }
                               }}
                               placeholder={row.prodId ? "Producto seleccionado (Backspace para cambiar)" : "Buscar producto..."}
@@ -2172,10 +2173,8 @@ function App() {
                               }`}
                               readOnly={!!row.prodId}
                             />
-                            {row.prodId && (
-                              <div className="mt-1 px-4 text-xs text-green-400">
-                                {row.categoria} • {row.talle} • {row.color}
-                              </div>
+                            {row.prodId && aviso && (
+                              <div className="mt-1 px-4 text-xs text-yellow-400">⚠ {aviso}</div>
                             )}
                             {matches.length > 0 && row.query && row.query.trim().length > 0 && !row.prodId && (
                               <div className="absolute left-0 top-full z-[60] mt-2 max-h-60 w-full overflow-auto rounded-3xl border border-border bg-panel shadow-2xl">
@@ -2190,8 +2189,13 @@ function App() {
                                   >
                                     <div className="flex flex-col">
                                       <span className="font-semibold text-textPrimary">{product.nombre}</span>
-                                      <span className="text-xs text-textSecondary">{product.categoria} • {product.talle} • {product.color}</span>
-                                      <span className="text-xs text-accent font-medium">{formatMoney(product.precio)}</span>
+                                      <span className="text-xs text-textSecondary">
+                                        {(() => {
+                                          const cargados = catalogoPrecios.filter(cp => cp.productoId === product.id && cp.precio > 0).length;
+                                          const total = VARIEDADES.length * RANGOS_TALLE.length;
+                                          return `${cargados} de ${total} precios cargados`;
+                                        })()}
+                                      </span>
                                     </div>
                                   </button>
                                 ))}
@@ -2203,13 +2207,35 @@ function App() {
                               </div>
                             )}
                           </div>
+                          <div>
+                            <select
+                              value={row.variedad ?? ''}
+                              disabled={!row.prodId}
+                              onChange={(event) => updateRowCombinacion(row.rowKey, 'variedad', event.target.value as Variedad)}
+                              className="w-full rounded-3xl border border-border bg-surface px-3 py-3 text-sm text-textPrimary outline-none transition focus:border-accent disabled:opacity-40"
+                            >
+                              {!row.variedad && <option value="">—</option>}
+                              {VARIEDADES.map(v => <option key={v} value={v}>{v}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <select
+                              value={row.rangoTalle ?? ''}
+                              disabled={!row.prodId}
+                              onChange={(event) => updateRowCombinacion(row.rowKey, 'rangoTalle', event.target.value as RangoTalle)}
+                              className="w-full rounded-3xl border border-border bg-surface px-3 py-3 text-sm text-textPrimary outline-none transition focus:border-accent disabled:opacity-40"
+                            >
+                              {!row.rangoTalle && <option value="">—</option>}
+                              {RANGOS_TALLE.map(r => <option key={r} value={r}>{r}</option>)}
+                            </select>
+                          </div>
                           <label className="space-y-2 text-sm text-textSecondary">
                             <input
                               type="number"
                               min={1}
                               value={formatNumberInput(row.cant)}
                               onChange={(event) => handleRowChange(row.rowKey, 'cant', Number(event.target.value))}
-                              className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                              className="w-full rounded-3xl border border-border bg-surface px-3 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
                             />
                           </label>
                           <div>
@@ -2218,7 +2244,9 @@ function App() {
                               onChange={(event) => handleRowChange(row.rowKey, 'precio', Number(event.target.value))}
                               type="number"
                               min={0}
-                              className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                              className={`w-full rounded-3xl border px-3 py-3 text-sm text-textPrimary outline-none transition focus:border-accent ${
+                                aviso ? 'border-yellow-600 bg-yellow-900/10' : 'border-border bg-surface'
+                              }`}
                             />
                           </div>
                           <div className="flex flex-col text-sm">
@@ -2245,11 +2273,20 @@ function App() {
                     })}
                   </div>
                 </div>
-                {rows.some(r => r.prodId && r.precio === 0) && (
-                  <div className="mt-4 rounded-2xl bg-yellow-900/20 border border-yellow-700 px-4 py-3 text-sm text-yellow-300">
-                    ⚠ Algunos productos no tienen precio definido para la lista "{getListaById(invoiceClienteActual?.cat ?? 'general').nombre}". Configura los precios en la pantalla de Productos.
-                  </div>
-                )}
+                {(() => {
+                  const faltantes = rows.map(avisoPrecioFaltante).filter(Boolean) as string[];
+                  if (faltantes.length === 0) return null;
+                  return (
+                    <div className="mt-4 rounded-2xl bg-yellow-900/20 border border-yellow-700 px-4 py-3 text-sm text-yellow-300">
+                      {Array.from(new Set(faltantes)).map(msg => (
+                        <p key={msg}>⚠ {msg}</p>
+                      ))}
+                      <p className="mt-2 text-xs text-yellow-400/80">
+                        Cargalos en la pantalla de Productos para que se autocompleten.
+                      </p>
+                    </div>
+                  );
+                })()}
                 <div className="mt-6 flex flex-col gap-4 rounded-3xl bg-surface p-5 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex gap-2 flex-wrap">
                     <button
@@ -2488,108 +2525,76 @@ function App() {
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <h3 className="text-2xl font-semibold">{clienteActual.nombre}</h3>
-                    <p className="mt-1 text-sm text-textSecondary">Categoría: {clienteActual.cat}</p>
+                    <p className="mt-1 text-sm text-textSecondary">
+                      Cuenta corriente · Lista de precios: {getListaById(clienteActual.cat).nombre}
+                    </p>
                   </div>
-                  <div className="flex gap-3">
-                    <button
-                      type="button"
-                      onClick={() => clienteActual && enviarWhatsAppResumen(clienteActual)}
-                      className="rounded-3xl bg-green-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-green-700 flex items-center gap-2"
-                    >
-                      <span>📱</span> Enviar por WhatsApp
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPaymentClienteId(clienteActual.id);
-                        setPaymentModalOpen(true);
-                      }}
-                      className="rounded-3xl bg-accent px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-600"
-                    >
-                      Registrar pago
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPaymentClienteId(clienteActual.id);
+                      setPaymentModalOpen(true);
+                    }}
+                    className="rounded-3xl bg-accent px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-600"
+                  >
+                    Registrar pago
+                  </button>
                 </div>
                 <div className="mt-6 grid gap-4 sm:grid-cols-3">
                   <div className="rounded-3xl border border-border bg-surface p-5">
-                    <p className="text-sm text-textSecondary">Saldo pendiente</p>
-                    <p className="mt-2 text-3xl font-semibold">{formatMoney(saldoPendiente)}</p>
-                  </div>
-                  <div className="rounded-3xl border border-border bg-surface p-5">
-                    <p className="text-sm text-textSecondary">Total comprado</p>
+                    <p className="text-sm text-textSecondary">Debe (facturado)</p>
                     <p className="mt-2 text-3xl font-semibold">{formatMoney(totalComprado)}</p>
                   </div>
                   <div className="rounded-3xl border border-border bg-surface p-5">
-                    <p className="text-sm text-textSecondary">Total pagado</p>
-                    <p className="mt-2 text-3xl font-semibold">{formatMoney(totalPagado)}</p>
+                    <p className="text-sm text-textSecondary">Haber (pagado)</p>
+                    <p className="mt-2 text-3xl font-semibold text-green-400">{formatMoney(totalPagado)}</p>
+                  </div>
+                  <div className="rounded-3xl border border-border bg-surface p-5">
+                    <p className="text-sm text-textSecondary">Saldo</p>
+                    <p className={`mt-2 text-3xl font-semibold ${saldoPendiente > 0 ? 'text-amber-400' : 'text-green-400'}`}>
+                      {formatMoney(saldoPendiente)}
+                    </p>
                   </div>
                 </div>
               </div>
-              <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-                <div className="rounded-3xl bg-panel p-6 shadow-panel">
-                  <h4 className="text-xl font-semibold">Compras</h4>
-                  <div className="mt-5 overflow-hidden rounded-3xl border border-border">
-                    <div className="overflow-x-auto">
-                      <table className="w-full border-collapse text-sm min-w-[500px]">
-                      <thead className="bg-surface text-textSecondary">
-                        <tr>
-                          <th className="px-5 py-4 text-left">Fecha</th>
-                          <th className="px-5 py-4 text-left">Productos</th>
-                          <th className="px-5 py-4 text-left">Total</th>
-                          <th className="px-5 py-4 text-left">Saldo acumulado</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {facturasPorCliente.map((factura, index) => {
-                          const acumulado = facturasPorCliente.slice(0, index + 1).reduce((sum, item) => sum + item.total, 0);
-                          return (
-                            <tr key={factura.id} className="border-t border-border hover:bg-surface">
-                              <td className="px-5 py-4 text-textSecondary">{factura.fecha}</td>
-                              <td className="px-5 py-4">
-                                <div className="max-w-xs text-sm text-textSecondary">
-                                  {factura.items.map((item) => (
-                                    <div key={item.prodId}>
-                                      {item.nombre} × {item.cant}
-                                    </div>
-                                  ))}
-                                </div>
-                              </td>
-                              <td className="px-5 py-4 font-medium">{formatMoney(factura.total)}</td>
-                              <td className="px-5 py-4 text-textSecondary">{formatMoney(acumulado)}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                    </div>
-                  </div>
-                </div>
-                <div className="rounded-3xl bg-panel p-6 shadow-panel">
-                  <h4 className="text-xl font-semibold">Pagos</h4>
-                  <div className="mt-5 space-y-4">
-                    {pagosPorCliente.length === 0 ? (
-                      <p className="text-sm text-textSecondary">No hay pagos registrados aún.</p>
-                    ) : (
-                      pagosPorCliente.map((pago) => (
-                        <div key={pago.id} className="rounded-3xl border border-border bg-surface p-4">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-sm text-textSecondary">{pago.fecha} • {pago.forma}</p>
-                              <p className="mt-2 text-xl font-semibold">{formatMoney(pago.monto)}</p>
-                              {pago.notas && <p className="mt-2 text-sm text-textSecondary">{pago.notas}</p>}
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => handleDeletePago(pago.id)}
-                              className="shrink-0 rounded-3xl bg-red-900/40 px-3 py-2 text-xs text-red-300 transition hover:bg-red-900"
-                            >
-                              🗑️ Eliminar
-                            </button>
+
+              <div className="rounded-3xl bg-panel p-6 shadow-panel">
+                <h4 className="mb-4 text-xl font-semibold">Detalle de movimientos</h4>
+                <CuentaCorrientePlanilla
+                  cliente={clienteActual}
+                  facturas={facturas}
+                  pagos={pagos}
+                  onError={error}
+                  onImprimirFactura={(f) => printInvoice(f, clienteActual)}
+                />
+              </div>
+
+              <div className="rounded-3xl bg-panel p-6 shadow-panel">
+                <h4 className="text-xl font-semibold">Pagos registrados</h4>
+                <p className="mt-1 text-sm text-textSecondary">Desde acá podés eliminar un pago mal cargado.</p>
+                <div className="mt-5 space-y-3">
+                  {pagosPorCliente.length === 0 ? (
+                    <p className="text-sm text-textSecondary">No hay pagos registrados aún.</p>
+                  ) : (
+                    pagosPorCliente.map((pago) => (
+                      <div key={pago.id} className="rounded-3xl border border-border bg-surface p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm text-textSecondary">{pago.fecha} • {pago.forma}</p>
+                            <p className="mt-1 text-xl font-semibold">{formatMoney(pago.monto)}</p>
+                            {pago.notas && <p className="mt-1 text-sm text-textSecondary">{pago.notas}</p>}
                           </div>
+                          <button
+                            type="button"
+                            onClick={() => handleDeletePago(pago.id)}
+                            className="shrink-0 rounded-3xl bg-red-900/40 px-3 py-2 text-xs text-red-300 transition hover:bg-red-900"
+                          >
+                            🗑️ Eliminar
+                          </button>
                         </div>
-                      ))
-                    )}
-                  </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             </section>
@@ -2749,122 +2754,113 @@ function App() {
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <h3 className="text-2xl font-semibold">Productos</h3>
-                    <p className="mt-1 text-sm text-textSecondary">Gestiona variantes y precios por lista. Haz clic en "Editar precios" para configurar la tabla de precios de cada producto.</p>
+                    <p className="mt-1 text-sm text-textSecondary">
+                      Cada producto tiene un precio por combinación de <strong>Variedad</strong> ×{' '}
+                      <strong>Rango de talle</strong>. Hacé clic en "Editar precios" para cargarlos tipo planilla.
+                    </p>
                   </div>
-                  <div className="flex gap-3">
+                  <div className="flex flex-wrap gap-3">
                     <input
-                      value={productFilter}
-                      onChange={(e) => setProductFilter(e.target.value)}
+                      value={catalogoFilter}
+                      onChange={(e) => setCatalogoFilter(e.target.value)}
                       placeholder="Buscar producto..."
                       className="flex-1 rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
                     />
                     <button
                       type="button"
-                      onClick={() => { setExportPreciosLista(listasPrecios[0]?.id || ''); setExportPreciosModalOpen(true); }}
+                      onClick={exportarCatalogoExcel}
                       className="rounded-3xl border border-border bg-surface px-4 py-2 text-sm font-semibold text-textPrimary transition hover:bg-border whitespace-nowrap"
                     >
-                      Exportar lista de precios
+                      Exportar precios
                     </button>
                     <button
                       type="button"
                       onClick={() => {
-                        setProductEdit(null);
-                        setNewProducto({ nombre: '', categoria: '', talle: '', color: '' });
-                        setProductModalOpen(true);
+                        setCatalogoNombreEdit(null);
+                        setCatalogoNombre('');
+                        setCatalogoNombreModalOpen(true);
                       }}
                       className="rounded-3xl bg-accent px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-600 whitespace-nowrap"
                     >
-                      + Nueva variante
+                      + Nuevo producto
                     </button>
                   </div>
                 </div>
+
                 <div className="mt-6 overflow-hidden rounded-3xl border border-border">
                   <div className="overflow-x-auto">
-                    <table className="w-full border-collapse text-sm min-w-[600px]">
+                    <table className="w-full border-collapse text-sm min-w-[640px]">
                       <thead className="bg-surface text-textSecondary">
                         <tr>
-                          <th className="px-3 py-4 text-left sm:px-5">Producto / Talle</th>
-                          <th className="px-3 py-4 text-left sm:px-5 hidden md:table-cell">Precios configurados</th>
-                          <th className="px-3 py-4 sm:px-5 text-right">Acciones</th>
+                          <th className="px-5 py-4 text-left">Producto</th>
+                          <th className="px-5 py-4 text-left">Precios cargados</th>
+                          <th className="px-5 py-4 text-left hidden md:table-cell">Rango de precios</th>
+                          <th className="px-5 py-4 text-right">Acciones</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {productGroups.length === 0 ? (
+                        {catalogoFiltrado.length === 0 ? (
                           <tr>
-                            <td colSpan={3} className="px-5 py-8 text-center text-textSecondary">No hay productos</td>
+                            <td colSpan={4} className="px-5 py-8 text-center text-textSecondary">
+                              {catalogoProductos.length === 0
+                                ? 'Todavía no hay productos. Creá el primero con "+ Nuevo producto".'
+                                : 'Ningún producto coincide con la búsqueda.'}
+                            </td>
                           </tr>
-                        ) : productGroups.map(group => {
-                          const isExpanded = productFilter.trim() !== '' || expandedGroups.has(group.key);
-                          const toggleGroup = () => setExpandedGroups(prev => {
-                            const next = new Set(prev);
-                            if (next.has(group.key)) next.delete(group.key);
-                            else next.add(group.key);
-                            return next;
-                          });
+                        ) : catalogoFiltrado.map(producto => {
+                          const precios = catalogoPrecios.filter(cp => cp.productoId === producto.id && cp.precio > 0);
+                          const totalCombinaciones = VARIEDADES.length * RANGOS_TALLE.length;
+                          const completo = precios.length === totalCombinaciones;
+                          const montos = precios.map(cp => cp.precio);
                           return (
-                          <Fragment key={group.key}>
-                            {/* Fila de grupo (colapsable) */}
-                            <tr className="bg-surface/60 border-t-2 border-border cursor-pointer hover:bg-surface/80 transition" onClick={toggleGroup}>
-                              <td className="px-3 py-3 sm:px-5" colSpan={2}>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-textSecondary text-xs select-none">{isExpanded ? '▼' : '▶'}</span>
-                                  <div>
-                                    <span className="font-semibold text-textPrimary">{group.nombre}</span>
-                                    <span className="ml-2 text-xs text-textSecondary capitalize">{group.categoria}</span>
-                                    <span className="ml-2 text-xs text-textSecondary">· {group.variants.length} talle{group.variants.length !== 1 ? 's' : ''}</span>
-                                  </div>
-                                </div>
+                            <tr key={producto.id} className="border-t border-border hover:bg-surface">
+                              <td className="px-5 py-4">
+                                <span className="font-semibold text-textPrimary">{producto.nombre}</span>
                               </td>
-                              <td className="px-3 py-3 text-right sm:px-5" onClick={e => e.stopPropagation()}>
+                              <td className="px-5 py-4">
+                                <span
+                                  className={`rounded-full px-3 py-1 text-xs font-medium ${
+                                    completo
+                                      ? 'bg-green-600/15 text-green-400'
+                                      : 'bg-yellow-600/20 text-yellow-400'
+                                  }`}
+                                >
+                                  {precios.length} de {totalCombinaciones}
+                                </span>
+                              </td>
+                              <td className="px-5 py-4 text-textSecondary hidden md:table-cell">
+                                {montos.length === 0
+                                  ? '—'
+                                  : `${formatMoney(Math.min(...montos))} — ${formatMoney(Math.max(...montos))}`}
+                              </td>
+                              <td className="px-5 py-4 text-right whitespace-nowrap">
                                 <button
                                   type="button"
-                                  onClick={() => { setPriceMatrixGroup(group.key); setEditingPriceMap({}); }}
-                                  className="rounded-3xl bg-accent/20 px-4 py-2 text-xs font-semibold text-accent hover:bg-accent/30 transition"
+                                  onClick={() => { setCatalogoModalProducto(producto); setCatalogoDraft({}); }}
+                                  className="mr-2 rounded-3xl bg-accent/20 px-4 py-2 text-xs font-semibold text-accent transition hover:bg-accent/30"
                                 >
                                   Editar precios
                                 </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setCatalogoNombreEdit(producto);
+                                    setCatalogoNombre(producto.nombre);
+                                    setCatalogoNombreModalOpen(true);
+                                  }}
+                                  className="mr-2 rounded-3xl bg-surface px-3 py-2 text-xs text-textPrimary transition hover:bg-border"
+                                >
+                                  Renombrar
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCatalogoDelete(producto)}
+                                  className="rounded-3xl bg-red-900/40 px-3 py-2 text-xs text-red-400 transition hover:bg-red-900"
+                                >
+                                  Borrar
+                                </button>
                               </td>
                             </tr>
-                            {/* Filas de variantes (solo si está expandido) */}
-                            {isExpanded && group.variants.map(item => {
-                              const hasAllPrices = listasPrecios.length > 0 && listasPrecios.every(l =>
-                                productPrices.some(pp => pp.productoId === item.id && pp.listaId === l.id && pp.precio > 0)
-                              );
-                              return (
-                                <tr key={item.id} className="border-t border-border/40 hover:bg-surface">
-                                  <td className="px-6 py-3 sm:px-8">
-                                    <span className="text-sm text-textPrimary">{item.talle}</span>
-                                    {item.color && <span className="ml-2 text-xs text-textSecondary">· {item.color}</span>}
-                                    {!hasAllPrices && (
-                                      <span className="ml-2 rounded-full bg-yellow-600/20 px-2 py-0.5 text-xs text-yellow-400">sin precios</span>
-                                    )}
-                                  </td>
-                                  <td className="px-3 py-3 sm:px-5 hidden md:table-cell">
-                                    <div className="flex flex-wrap gap-2">
-                                      {listasPrecios.map(lista => {
-                                        const pp = productPrices.find(p => p.productoId === item.id && p.listaId === lista.id);
-                                        return (
-                                          <span key={lista.id} className={`text-xs ${pp && pp.precio > 0 ? 'text-textSecondary' : 'text-yellow-500'}`}>
-                                            <span className="text-textSecondary/50">{lista.nombre}:</span> {pp && pp.precio > 0 ? formatMoney(pp.precio) : '—'}
-                                          </span>
-                                        );
-                                      })}
-                                    </div>
-                                  </td>
-                                  <td className="px-3 py-3 text-right sm:px-5">
-                                    <button type="button" onClick={() => handleProductEdit(item)}
-                                      className="mr-2 rounded-3xl bg-surface px-3 py-2 text-xs text-textPrimary transition hover:bg-border">
-                                      Editar
-                                    </button>
-                                    <button type="button" onClick={() => handleProductDelete(item.id)}
-                                      className="rounded-3xl bg-red-900/40 px-3 py-2 text-xs text-red-400 transition hover:bg-red-900">
-                                      Borrar
-                                    </button>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </Fragment>
                           );
                         })}
                       </tbody>
@@ -3333,31 +3329,11 @@ function App() {
                     )}
                   </div>
                   <p className="mt-3 text-xs text-textSecondary">
-                    Una vez creada la lista, ve a Productos para asignar el precio de cada variante en esta lista.
+                    Las listas sirven para clasificar clientes. Los precios se cargan en Productos,
+                    por combinación de Variedad × Rango de talle.
                   </p>
                 </div>
 
-                {/* Zona peligrosa */}
-                <div className="mt-6 rounded-3xl border border-red-200 bg-red-50 p-5">
-                  <h4 className="text-sm font-semibold text-red-800">Zona peligrosa</h4>
-                  <p className="mt-1 text-xs text-red-700">Esta acción borra los precios de todos los productos en todas las listas. No afecta los productos ni las facturas existentes.</p>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      if (!window.confirm('¿Borrar TODOS los precios de todos los productos? Esta acción no se puede deshacer.')) return;
-                      try {
-                        await clearAllProductPrices();
-                        setProductPrices([]);
-                        success('Todos los precios fueron borrados');
-                      } catch (err: any) {
-                        error(`Error al borrar precios: ${err.message}`);
-                      }
-                    }}
-                    className="mt-3 rounded-3xl bg-red-600 px-5 py-2 text-sm font-semibold text-white hover:bg-red-700"
-                  >
-                    Borrar todos los precios
-                  </button>
-                </div>
               </div>
             </section>
           )}
@@ -3615,136 +3591,122 @@ function App() {
         </main>
       </div>
 
-      {/* Modal de producto (variante) */}
+      {/* Modal: alta / renombrado de producto del catálogo */}
       <Modal
-        title={productEdit ? 'Editar variante' : 'Nueva variante'}
-        open={productModalOpen}
-        onClose={() => { setProductModalOpen(false); setProductEdit(null); setNewProducto({ nombre: '', categoria: '', talle: '', color: '' }); }}
+        title={catalogoNombreEdit ? 'Renombrar producto' : 'Nuevo producto'}
+        open={catalogoNombreModalOpen}
+        onClose={() => { setCatalogoNombreModalOpen(false); setCatalogoNombreEdit(null); setCatalogoNombre(''); }}
       >
         <div className="space-y-4">
-          <p className="text-xs text-textSecondary">Los precios se configuran en la tabla de precios del producto (botón "Editar precios").</p>
-          <label className="space-y-2 text-sm text-textSecondary">
+          <label className="block space-y-2 text-sm text-textSecondary">
             Nombre del producto
-            <input value={newProducto.nombre} onChange={(e) => setNewProducto((p) => ({ ...p, nombre: e.target.value }))}
-              placeholder="Ej: Remera, Pantalón, Campera..."
-              className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent" />
+            <input
+              autoFocus
+              value={catalogoNombre}
+              onChange={(e) => setCatalogoNombre(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleCatalogoNombreSave(); }}
+              placeholder="Ej: Remera Algodón"
+              className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+            />
           </label>
-          <div className="grid grid-cols-2 gap-4">
-            <label className="space-y-2 text-sm text-textSecondary">
-              Categoría
-              <input value={newProducto.categoria} onChange={(e) => setNewProducto((p) => ({ ...p, categoria: e.target.value }))}
-                placeholder="Ej: Indumentaria"
-                className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent" />
-            </label>
-            <label className="space-y-2 text-sm text-textSecondary">
-              Talle
-              <input value={newProducto.talle} onChange={(e) => setNewProducto((p) => ({ ...p, talle: e.target.value }))}
-                placeholder="Ej: S, M, L, XL, 38..."
-                className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent" />
-            </label>
-          </div>
-          <label className="space-y-2 text-sm text-textSecondary">
-            Color
-            <input value={newProducto.color} onChange={(e) => setNewProducto((p) => ({ ...p, color: e.target.value }))}
-              placeholder="Ej: Rojo, Negro, Blanco..."
-              className="w-full rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none transition focus:border-accent" />
-          </label>
-          <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={() => { setProductModalOpen(false); setProductEdit(null); setNewProducto({ nombre: '', categoria: '', talle: '', color: '' }); }}
-              className="rounded-3xl bg-panel px-5 py-3 text-sm font-semibold text-textPrimary ring-1 ring-border hover:bg-surface">
+          {!catalogoNombreEdit && (
+            <p className="text-xs text-textSecondary">
+              Después de crearlo vas a poder cargar sus {VARIEDADES.length * RANGOS_TALLE.length} precios
+              ({VARIEDADES.length} variedades × {RANGOS_TALLE.length} rangos de talle).
+            </p>
+          )}
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => { setCatalogoNombreModalOpen(false); setCatalogoNombreEdit(null); setCatalogoNombre(''); }}
+              className="rounded-3xl border border-border bg-surface px-5 py-3 text-sm font-semibold text-textPrimary transition hover:bg-border"
+            >
               Cancelar
             </button>
-            <button type="button" onClick={handleProductSave}
-              className="rounded-3xl bg-accent px-5 py-3 text-sm font-semibold text-white hover:bg-indigo-600">
-              {productEdit ? 'Actualizar' : 'Guardar variante'}
+            <button
+              type="button"
+              onClick={handleCatalogoNombreSave}
+              className="rounded-3xl bg-accent px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-600"
+            >
+              {catalogoNombreEdit ? 'Guardar' : 'Crear producto'}
             </button>
           </div>
         </div>
       </Modal>
 
-      {/* Modal de matriz de precios */}
+      {/* Modal: planilla de precios Variedad x Rango de talle */}
       <Modal
-        title={priceMatrixGroup ? `Precios — ${priceMatrixGroup.split('||')[0]}` : ''}
-        open={priceMatrixGroup !== null}
-        onClose={() => { setPriceMatrixGroup(null); setEditingPriceMap({}); }}
+        title={catalogoModalProducto ? `Precios — ${catalogoModalProducto.nombre}` : ''}
+        size="wide"
+        open={catalogoModalProducto !== null}
+        onClose={() => { setCatalogoModalProducto(null); setCatalogoDraft({}); }}
       >
-        {priceMatrixGroup && (() => {
-          const [nombre, categoria] = priceMatrixGroup.split('||');
-          const variants = productos.filter(p => p.nombre === nombre && p.categoria === categoria);
-          return (
-            <div>
-              <p className="text-sm text-textSecondary mb-4">
-                <span className="capitalize">{categoria}</span> · Editá el precio para cada talle y lista. Los cambios se guardan automáticamente.
-              </p>
-              {listasPrecios.length === 0 ? (
-                <div className="rounded-3xl bg-surface p-6 text-center text-textSecondary">
-                  No hay listas de precios configuradas. Creá una en la sección "Listas de precios".
-                </div>
-              ) : (
-                <div className="overflow-x-auto max-h-[60vh] overflow-y-auto">
-                  <table className="w-full text-sm border-collapse">
-                    <thead>
-                      <tr className="bg-surface">
-                        <th className="px-3 py-3 text-left text-textSecondary font-medium">Talle / Color</th>
-                        {listasPrecios.map(lista => (
-                          <th key={lista.id} className="px-3 py-3 text-left text-textSecondary font-medium min-w-[110px]">{lista.nombre}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {variants.map(variant => (
-                        <tr key={variant.id} className="border-t border-border">
-                          <td className="px-3 py-3 font-medium text-textPrimary">
-                            {variant.talle}
-                            {variant.color && <span className="ml-1 text-xs text-textSecondary">· {variant.color}</span>}
+        {catalogoModalProducto && (
+          <div>
+            <p className="mb-4 text-sm text-textSecondary">
+              Filas = variedad · Columnas = rango de talle. Cada celda es el precio unitario de esa
+              combinación. Se guarda solo al salir de la celda.
+            </p>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr className="bg-surface">
+                    <th className="px-3 py-3 text-left font-medium text-textSecondary">Variedad</th>
+                    {RANGOS_TALLE.map(rango => (
+                      <th key={rango} className="px-3 py-3 text-left font-medium text-textSecondary min-w-[120px]">
+                        {rango}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {VARIEDADES.map(variedad => (
+                    <tr key={variedad} className="border-t border-border">
+                      <td className="px-3 py-3 font-medium text-textPrimary whitespace-nowrap">{variedad}</td>
+                      {RANGOS_TALLE.map(rango => {
+                        const clave = `${variedad}||${rango}`;
+                        const guardado = findCatalogoPrecio(catalogoModalProducto.id, variedad, rango);
+                        const draft = catalogoDraft[clave];
+                        const valor = draft !== undefined ? draft : (guardado > 0 ? String(guardado) : '');
+                        const vacio = valor === '' || valor === '0';
+                        return (
+                          <td key={rango} className="px-3 py-2">
+                            <input
+                              type="number"
+                              min={0}
+                              value={valor}
+                              placeholder="—"
+                              onChange={(e) =>
+                                setCatalogoDraft(prev => ({ ...prev, [clave]: e.target.value }))
+                              }
+                              onBlur={async (e) => {
+                                await handleCatalogoPrecioSave(
+                                  catalogoModalProducto.id, variedad, rango, e.target.value
+                                );
+                                setCatalogoDraft(prev => {
+                                  const next = { ...prev };
+                                  delete next[clave];
+                                  return next;
+                                });
+                              }}
+                              className={`w-28 rounded-xl border px-3 py-2 text-sm text-textPrimary outline-none transition focus:border-accent ${
+                                vacio ? 'border-yellow-600/50 bg-yellow-900/10' : 'border-border bg-surface'
+                              }`}
+                            />
                           </td>
-                          {listasPrecios.map(lista => {
-                            const existingPP = productPrices.find(pp => pp.productoId === variant.id && pp.listaId === lista.id);
-                            const localVal = editingPriceMap[variant.id]?.[lista.id];
-                            const displayVal = localVal !== undefined ? localVal : (existingPP?.precio ? existingPP.precio.toString() : '');
-                            const isEmpty = !displayVal || displayVal === '0';
-                            return (
-                              <td key={lista.id} className="px-3 py-2">
-                                <input
-                                  type="number"
-                                  min={0}
-                                  value={displayVal}
-                                  placeholder="—"
-                                  onChange={(e) => {
-                                    setEditingPriceMap(prev => ({
-                                      ...prev,
-                                      [variant.id]: { ...(prev[variant.id] ?? {}), [lista.id]: e.target.value },
-                                    }));
-                                  }}
-                                  onBlur={async (e) => {
-                                    const val = e.target.value.trim();
-                                    if (val === '' || val === undefined) return;
-                                    const precio = Number(val);
-                                    try {
-                                      await upsertProductPrice(variant.id, lista.id, precio);
-                                      setProductPrices(prev => {
-                                        const filtered = prev.filter(pp => !(pp.productoId === variant.id && pp.listaId === lista.id));
-                                        return [...filtered, { productoId: variant.id, listaId: lista.id, precio }];
-                                      });
-                                    } catch (err: any) {
-                                      error(`Error guardando precio: ${err.message}`);
-                                    }
-                                  }}
-                                  className={`w-28 rounded-xl border px-3 py-2 text-sm text-textPrimary outline-none transition focus:border-accent ${isEmpty ? 'border-yellow-600/50 bg-yellow-900/10' : 'border-border bg-surface'}`}
-                                />
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-              <p className="mt-4 text-xs text-textSecondary">Los precios en amarillo están sin definir. Al salir de la celda se guarda automáticamente.</p>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          );
-        })()}
+            <p className="mt-4 text-xs text-textSecondary">
+              Las celdas en amarillo están sin precio: esas combinaciones van a mostrar un aviso al
+              armar una factura. Dejá una celda vacía para borrar su precio.
+            </p>
+          </div>
+        )}
       </Modal>
 
       <Modal title="Registrar pago" open={paymentModalOpen} onClose={() => setPaymentModalOpen(false)}>
@@ -3874,7 +3836,7 @@ function App() {
                           <td className="px-4 py-3">
                             <div className="font-medium">{item.nombre}</div>
                             <div className="text-xs text-textSecondary">
-                              {item.categoria} • {item.talle} • {item.color}
+                              {describirItem(item)}
                             </div>
                           </td>
                           <td className="px-4 py-3 text-right">{item.cant}</td>
@@ -3927,54 +3889,99 @@ function App() {
         })()}
       </Modal>
 
-      {/* Modal deuda total — lista de clientes con saldo > 0 */}
+      {/* Nivel 1: clientes con deuda — Debe / Haber / Saldo */}
       <Modal
-        title="Clientes con deuda pendiente"
+        title="Clientes con deuda"
+        size="wide"
         open={resumenDeudaOpen}
         onClose={() => setResumenDeudaOpen(false)}
       >
-        {clientesConDeudaDetalle.length === 0 ? (
-          <p className="text-sm text-textSecondary py-4 text-center">No hay clientes con saldo pendiente.</p>
+        {cuentasConDeuda.length === 0 ? (
+          <p className="py-4 text-center text-sm text-textSecondary">No hay clientes con saldo pendiente.</p>
         ) : (
           <div className="space-y-4">
             <div className="overflow-hidden rounded-2xl border border-border">
-              <table className="w-full border-collapse text-sm">
-                <thead className="bg-surface text-textSecondary">
-                  <tr>
-                    <th className="px-4 py-3 text-left">Cliente</th>
-                    <th className="px-4 py-3 text-right">Saldo pendiente</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {clientesConDeudaDetalle.map(({ cliente, saldo }) => (
-                    <tr key={cliente.id} className="border-t border-border hover:bg-surface">
-                      <td className="px-4 py-3">
-                        <button
-                          type="button"
-                          onClick={() => { setSelectedClientId(cliente.id); setResumenDeudaOpen(false); setPage('cuenta'); }}
-                          className="text-left hover:text-accent transition"
-                        >
-                          <span className="font-medium">{cliente.nombre}</span>
-                          {cliente.tel && <span className="ml-2 text-xs text-textSecondary">{cliente.tel}</span>}
-                        </button>
-                      </td>
-                      <td className="px-4 py-3 text-right font-semibold text-amber-400">{formatMoney(saldo)}</td>
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-sm min-w-[620px]">
+                  <thead className="bg-surface text-textSecondary">
+                    <tr>
+                      <th className="px-4 py-3 text-left">Cliente</th>
+                      <th className="px-4 py-3 text-left">Última factura</th>
+                      <th className="px-4 py-3 text-right">Debe</th>
+                      <th className="px-4 py-3 text-right">Haber</th>
+                      <th className="px-4 py-3 text-right">Saldo</th>
                     </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t-2 border-border bg-surface">
-                    <td className="px-4 py-3 font-semibold text-textSecondary">Total</td>
-                    <td className="px-4 py-3 text-right font-bold text-red-400">
-                      {formatMoney(clientesConDeudaDetalle.reduce((s, x) => s + x.saldo, 0))}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
+                  </thead>
+                  <tbody>
+                    {cuentasConDeuda.map(({ cliente, ultimaFactura, debe, haber, saldo }) => (
+                      <tr
+                        key={cliente.id}
+                        onClick={() => setCuentaDetalleCliente(cliente)}
+                        className="cursor-pointer border-t border-border transition hover:bg-surface"
+                      >
+                        <td className="px-4 py-3">
+                          <span className="font-medium text-textPrimary hover:text-accent">{cliente.nombre}</span>
+                          {cliente.tel && <span className="ml-2 text-xs text-textSecondary">{cliente.tel}</span>}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-textSecondary">{ultimaFactura}</td>
+                        <td className="px-4 py-3 text-right">{formatMoney(debe)}</td>
+                        <td className="px-4 py-3 text-right text-green-400">{formatMoney(haber)}</td>
+                        <td className="px-4 py-3 text-right font-semibold text-amber-400">{formatMoney(saldo)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-border bg-surface font-semibold">
+                      <td className="px-4 py-3 text-textSecondary" colSpan={2}>Totales</td>
+                      <td className="px-4 py-3 text-right">
+                        {formatMoney(cuentasConDeuda.reduce((s, x) => s + x.debe, 0))}
+                      </td>
+                      <td className="px-4 py-3 text-right text-green-400">
+                        {formatMoney(cuentasConDeuda.reduce((s, x) => s + x.haber, 0))}
+                      </td>
+                      <td className="px-4 py-3 text-right text-red-400">
+                        {formatMoney(cuentasConDeuda.reduce((s, x) => s + x.saldo, 0))}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
             </div>
-            <p className="text-xs text-textSecondary text-center">
-              {clientesConDeudaDetalle.length} cliente{clientesConDeudaDetalle.length !== 1 ? 's' : ''} con deuda · click en el nombre para ver su cuenta
+            <p className="text-center text-xs text-textSecondary">
+              {cuentasConDeuda.length} cliente{cuentasConDeuda.length !== 1 ? 's' : ''} con deuda · click en una fila para ver su cuenta corriente
             </p>
+          </div>
+        )}
+      </Modal>
+
+      {/* Nivel 2: cuenta corriente completa del cliente elegido */}
+      <Modal
+        title={cuentaDetalleCliente ? `Cuenta corriente — ${cuentaDetalleCliente.nombre}` : ''}
+        size="wide"
+        open={cuentaDetalleCliente !== null}
+        onClose={() => setCuentaDetalleCliente(null)}
+      >
+        {cuentaDetalleCliente && (
+          <div className="space-y-4">
+            <CuentaCorrientePlanilla
+              cliente={cuentaDetalleCliente}
+              facturas={facturas}
+              pagos={pagos}
+              onError={error}
+              onImprimirFactura={(f) => printInvoice(f, cuentaDetalleCliente)}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedClientId(cuentaDetalleCliente.id);
+                setCuentaDetalleCliente(null);
+                setResumenDeudaOpen(false);
+                setPage('cuenta');
+              }}
+              className="w-full rounded-3xl border border-border bg-surface py-3 text-sm font-semibold text-textPrimary transition hover:bg-border"
+            >
+              Abrir la ficha completa del cliente
+            </button>
           </div>
         )}
       </Modal>
@@ -4048,29 +4055,6 @@ function App() {
               Descargar PDF
             </button>
             <button onClick={() => { exportDeudoresExcel(); setExportDeudoresModalOpen(false); }}
-              className="flex-1 rounded-3xl bg-green-600 py-3 text-sm font-semibold text-white hover:bg-green-700">
-              Descargar Excel
-            </button>
-          </div>
-        </Modal>
-      )}
-
-      {/* Modal exportar lista de precios */}
-      {exportPreciosModalOpen && (
-        <Modal title="Exportar lista de precios" open={exportPreciosModalOpen} onClose={() => setExportPreciosModalOpen(false)}>
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-textSecondary mb-1">Lista de precios</label>
-            <select value={exportPreciosLista} onChange={e => setExportPreciosLista(e.target.value)}
-              className="w-full rounded-2xl border border-border bg-surface px-4 py-3 text-sm text-textPrimary outline-none focus:border-accent">
-              {listasPrecios.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}
-            </select>
-          </div>
-          <div className="flex gap-3">
-            <button onClick={() => { exportPreciosPDF(exportPreciosLista); setExportPreciosModalOpen(false); }}
-              className="flex-1 rounded-3xl bg-red-600 py-3 text-sm font-semibold text-white hover:bg-red-700">
-              Descargar PDF
-            </button>
-            <button onClick={() => { exportPreciosExcel(exportPreciosLista); setExportPreciosModalOpen(false); }}
               className="flex-1 rounded-3xl bg-green-600 py-3 text-sm font-semibold text-white hover:bg-green-700">
               Descargar Excel
             </button>

@@ -1,4 +1,4 @@
-import type { Cliente, Factura, ListaPrecio, Pago, ProductPrice, Producto, Presupuesto } from '../types';
+import type { CatalogoPrecio, CatalogoProducto, Cliente, Factura, ListaPrecio, Pago, ProductPrice, Producto, Presupuesto, RangoTalle, Variedad } from '../types';
 import { supabase } from './supabase';
 
 export interface BackupPayload {
@@ -71,6 +71,84 @@ export async function upsertProductPrice(productoId: string, listaId: string, pr
   const { error } = await supabase
     .from('product_prices')
     .upsert({ producto_id: productoId, lista_id: listaId, precio });
+  if (error) throw error;
+}
+
+// ============================================================
+// Catálogo: Producto x Variedad x Rango de talle
+// ============================================================
+
+export async function loadCatalogoProductos(): Promise<CatalogoProducto[]> {
+  try {
+    const { data, error } = await supabase
+      .from('catalogo_productos')
+      .select('*')
+      .order('orden', { ascending: true })
+      .order('nombre', { ascending: true });
+    if (error) throw error;
+    return (data || []).map(r => ({ id: r.id, nombre: r.nombre, orden: r.orden ?? 0 }));
+  } catch (error) {
+    console.error('Error loading catalogo_productos:', error);
+    return [];
+  }
+}
+
+export async function loadCatalogoPrecios(): Promise<CatalogoPrecio[]> {
+  try {
+    const { data, error } = await supabase.from('catalogo_precios').select('*');
+    if (error) throw error;
+    return (data || []).map(r => ({
+      productoId: r.producto_id,
+      variedad: r.variedad as Variedad,
+      rangoTalle: r.rango_talle as RangoTalle,
+      precio: parseFloat(r.precio),
+    }));
+  } catch (error) {
+    console.error('Error loading catalogo_precios:', error);
+    return [];
+  }
+}
+
+export async function saveCatalogoProducto(producto: CatalogoProducto): Promise<void> {
+  const { error } = await supabase
+    .from('catalogo_productos')
+    .upsert({ id: producto.id, nombre: producto.nombre, orden: producto.orden });
+  if (error) throw error;
+}
+
+// Los precios se borran en cascada (FK ON DELETE CASCADE)
+export async function deleteCatalogoProducto(id: string): Promise<void> {
+  const { error } = await supabase.from('catalogo_productos').delete().eq('id', id);
+  if (error) throw error;
+}
+
+export async function upsertCatalogoPrecio(
+  productoId: string,
+  variedad: Variedad,
+  rangoTalle: RangoTalle,
+  precio: number
+): Promise<void> {
+  const { error } = await supabase.from('catalogo_precios').upsert({
+    producto_id: productoId,
+    variedad,
+    rango_talle: rangoTalle,
+    precio,
+    updated_at: new Date().toISOString(),
+  });
+  if (error) throw error;
+}
+
+export async function deleteCatalogoPrecio(
+  productoId: string,
+  variedad: Variedad,
+  rangoTalle: RangoTalle
+): Promise<void> {
+  const { error } = await supabase
+    .from('catalogo_precios')
+    .delete()
+    .eq('producto_id', productoId)
+    .eq('variedad', variedad)
+    .eq('rango_talle', rangoTalle);
   if (error) throw error;
 }
 
@@ -156,6 +234,8 @@ function databaseToFactura(facturaRow: any, items: any[]): Factura {
       color: item.color,
       cant: item.cant,
       precio: parseFloat(item.precio),
+      variedad: item.variedad ?? undefined,
+      rangoTalle: item.rango_talle ?? undefined,
     })),
   };
 }
@@ -358,6 +438,8 @@ export async function saveFactura(factura: Factura): Promise<void> {
           color: item.color,
           cant: item.cant,
           precio: item.precio,
+          variedad: item.variedad ?? null,
+          rango_talle: item.rangoTalle ?? null,
         })));
       if (insertItemsError) throw insertItemsError;
     }
@@ -418,6 +500,8 @@ export async function saveFacturas(facturas: Factura[]) {
           color: item.color,
           cant: item.cant,
           precio: item.precio,
+          variedad: item.variedad ?? null,
+          rango_talle: item.rangoTalle ?? null,
         }))
       );
       if (allItems.length > 0) {
@@ -888,6 +972,8 @@ export async function loadPresupuestos(): Promise<Presupuesto[]> {
         color: item.color,
         cant: item.cant,
         precio: parseFloat(item.precio),
+        variedad: item.variedad ?? undefined,
+        rangoTalle: item.rango_talle ?? undefined,
       })),
     }));
   } catch (error) {
@@ -920,6 +1006,8 @@ export async function savePresupuesto(p: Presupuesto): Promise<void> {
         color: item.color,
         cant: item.cant,
         precio: item.precio,
+        variedad: item.variedad ?? null,
+        rango_talle: item.rangoTalle ?? null,
       }))
     );
     if (iError) throw iError;
