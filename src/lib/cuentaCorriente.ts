@@ -1,4 +1,5 @@
 import type { Cliente, Factura, Pago } from '../types';
+import { describirItem } from './talles';
 
 /**
  * Una fila de la planilla contable. Cada factura genera un movimiento en el
@@ -31,9 +32,7 @@ export function numeroComprobante(id: string, prefijo: string): string {
 
 function resumirItems(factura: Factura): string {
   const partes = factura.items.map(item => {
-    const variante = [item.variedad, item.rangoTalle ?? item.talle]
-      .filter(Boolean)
-      .join(' ');
+    const variante = describirItem(item);
     return `${item.nombre}${variante ? ` (${variante})` : ''} x${item.cant}`;
   });
   if (partes.length === 0) return 'Factura sin ítems';

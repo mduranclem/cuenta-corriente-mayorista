@@ -2,8 +2,9 @@ import { Fragment, useMemo, useState } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
-import type { Cliente, Factura, FacturaItem, Pago } from '../types';
+import type { Cliente, Factura, Pago } from '../types';
 import { construirCuentaCorriente } from '../lib/cuentaCorriente';
+import { describirItem } from '../lib/talles';
 
 const formatMoney = (value: number) =>
   new Intl.NumberFormat('es-AR', {
@@ -12,13 +13,6 @@ const formatMoney = (value: number) =>
     maximumFractionDigits: 0,
   }).format(value);
 
-// Variedad + rango de talle si están; si no, los campos viejos.
-const describirItem = (item: FacturaItem): string => {
-  const partes = item.variedad || item.rangoTalle
-    ? [item.variedad, item.rangoTalle]
-    : [item.categoria, item.talle, item.color];
-  return partes.filter(Boolean).join(' • ');
-};
 
 interface Props {
   cliente: Cliente;

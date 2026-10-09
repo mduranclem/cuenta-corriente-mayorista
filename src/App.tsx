@@ -3,10 +3,15 @@ import { Sidebar } from './components/Sidebar';
 import { Modal } from './components/Modal';
 import { Toast } from './components/Toast';
 import { useToast } from './hooks/useToast';
-import type { CatalogoPrecio, CatalogoProducto, Cliente, Factura, FacturaItem, FormaPago, ListaPrecio, Pago, Producto, Presupuesto, RangoTalle, Variedad } from './types';
+import type { CatalogoPrecio, CatalogoProducto, Cliente, Factura, FormaPago, ListaPrecio, Pago, Producto, Presupuesto, RangoTalle, Variedad } from './types';
 import { RANGOS_TALLE, VARIEDADES } from './types';
 import { CuentaCorrientePlanilla } from './components/CuentaCorrientePlanilla';
 import { resumirCuentasPorCliente } from './lib/cuentaCorriente';
+import { describirItem, tallesDelRango } from './lib/talles';
+import type { Talle } from './lib/talles';
+import { filasAItems, itemsAFilas, nuevaFila, precioDelRango, rangosUsados, subtotalDeFila, unidadesDeFila } from './lib/facturaRows';
+import type { RowFactura } from './lib/facturaRows';
+import { detectarCombinados } from './lib/separarMateriales';
 import type { BackupPayload } from './lib/storage';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -56,26 +61,12 @@ import {
 
 type Page = 'inicio' | 'dashboard' | 'clientes' | 'cuenta' | 'historial' | 'nuevo-cliente' | 'productos' | 'backup' | 'login' | 'admin' | 'listas-precios' | 'auditoria' | 'presupuestos' | 'reportes';
 
-interface RowFactura extends FacturaItem {
-  query: string;
-  rowKey: string;
-}
-
 const formatMoney = (value: number) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(value);
 const today = new Date().toISOString().slice(0, 10);
 const formasPago: FormaPago[] = ['Efectivo', 'Transferencia', 'Cheque', 'Tarjeta'];
 
 // Helper para campos numéricos sin mostrar 0
 const formatNumberInput = (value: number) => value === 0 ? '' : value.toString();
-
-// Descripción de un ítem: usa Variedad + Rango de talle si están, y si no
-// cae en los campos viejos (ítems anteriores a la migración del catálogo).
-const describirItem = (item: FacturaItem): string => {
-  const partes = item.variedad || item.rangoTalle
-    ? [item.variedad, item.rangoTalle]
-    : [item.categoria, item.talle, item.color];
-  return partes.filter(Boolean).join(' • ');
-};
 
 // Función para imprimir factura o presupuesto
 const printInvoice = (factura: Factura | Presupuesto, cliente: Cliente, sena?: number, tipo: 'factura' | 'presupuesto' = 'factura') => {
@@ -218,9 +209,7 @@ function App() {
   const [selectedClientId, setSelectedClientId] = useState<string>('');
   const [invoiceClient, setInvoiceClient] = useState<string>('');
   const [invoiceDate, setInvoiceDate] = useState(today);
-  const [rows, setRows] = useState<RowFactura[]>([
-    { rowKey: 'r0', prodId: '', nombre: '', categoria: '', talle: '', color: '', cant: 1, precio: 0, query: '' },
-  ]);
+  const [rows, setRows] = useState<RowFactura[]>(() => [nuevaFila()]);
   const [productSearch, setProductSearch] = useState('');
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentClienteId, setPaymentClienteId] = useState('');
@@ -292,6 +281,8 @@ function App() {
   const [catalogoModalProducto, setCatalogoModalProducto] = useState<CatalogoProducto | null>(null);
   const [catalogoDraft, setCatalogoDraft] = useState<Record<string, string>>({});
   const [catalogoNombreModalOpen, setCatalogoNombreModalOpen] = useState(false);
+  const [separarModalOpen, setSepararModalOpen] = useState(false);
+  const [separando, setSeparando] = useState(false);
   const [catalogoNombreEdit, setCatalogoNombreEdit] = useState<CatalogoProducto | null>(null);
   const [catalogoNombre, setCatalogoNombre] = useState('');
   const [catalogoFilter, setCatalogoFilter] = useState('');
@@ -473,12 +464,12 @@ function App() {
     .reverse()[0] || '—';
 
   const totalFactura = useMemo(
-    () => rows.reduce((total, row) => total + row.precio * row.cant, 0),
+    () => rows.reduce((total, row) => total + subtotalDeFila(row), 0),
     [rows]
   );
 
   const totalUnidades = useMemo(
-    () => rows.reduce((sum, row) => sum + (row.prodId ? row.cant : 0), 0),
+    () => rows.reduce((sum, row) => sum + unidadesDeFila(row), 0),
     [rows]
   );
 
@@ -539,62 +530,70 @@ function App() {
    * Aviso de precio faltante. Solo aplica a productos del catálogo: las
    * facturas viejas conservan su precio original y no se avisa nada.
    */
-  const avisoPrecioFaltante = (row: RowFactura): string | null => {
-    if (!row.prodId || !row.variedad || !row.rangoTalle) return null;
+  const avisosPrecioFaltante = (row: RowFactura): string[] => {
+    if (row.modo !== 'talles' || !row.prodId || !row.variedad) return [];
     const producto = catalogoProductoById(row.prodId);
-    if (!producto) return null;
-    if (findCatalogoPrecio(row.prodId, row.variedad, row.rangoTalle) > 0) return null;
-    return `Falta cargar el precio para ${producto.nombre} · ${row.variedad} · ${row.rangoTalle}`;
+    if (!producto) return [];
+    return rangosUsados(row)
+      .filter(rango => precioDelRango(row, rango) <= 0)
+      .map(rango => `Falta cargar el precio para ${producto.nombre} · ${row.variedad} · ${rango}`);
+  };
+
+  /** Precios de los 4 rangos según el catálogo, para la variedad elegida. */
+  const preciosDelCatalogo = (productoId: string, variedad: Variedad) =>
+    Object.fromEntries(
+      RANGOS_TALLE.map(r => [r, findCatalogoPrecio(productoId, variedad, r)])
+    ) as Record<RangoTalle, number>;
+
+  const updateRow = (rowKey: string, cambio: (row: RowFactura) => RowFactura) => {
+    setRows(rows => rows.map(row => (row.rowKey === rowKey ? cambio(row) : row)));
   };
 
   const updateRowProduct = (rowKey: string, product: CatalogoProducto) => {
-    setRows((rows) =>
-      rows.map((row) => {
-        if (row.rowKey !== rowKey) return row;
-        const variedad = row.variedad ?? VARIEDADES[0];
-        const rangoTalle = row.rangoTalle ?? RANGOS_TALLE[0];
-        return {
-          ...row,
-          prodId: product.id,
-          nombre: product.nombre,
-          variedad,
-          rangoTalle,
-          // Espejo de los campos viejos para que el historial y las impresiones
-          // anteriores a la migración sigan mostrando algo coherente.
-          categoria: variedad,
-          talle: rangoTalle,
-          color: '',
-          precio: findCatalogoPrecio(product.id, variedad, rangoTalle),
-          query: '',
-        };
-      })
-    );
+    updateRow(rowKey, row => {
+      const variedad = row.variedad ?? VARIEDADES[0];
+      return {
+        ...row,
+        modo: 'talles',
+        item: undefined,
+        prodId: product.id,
+        nombre: product.nombre,
+        variedad,
+        precios: preciosDelCatalogo(product.id, variedad),
+        query: '',
+      };
+    });
   };
 
-  /** Cambia variedad o rango y vuelve a buscar el precio de la combinación. */
-  const updateRowCombinacion = (
-    rowKey: string,
-    campo: 'variedad' | 'rangoTalle',
-    valor: Variedad | RangoTalle
-  ) => {
-    setRows((rows) =>
-      rows.map((row) => {
-        if (row.rowKey !== rowKey) return row;
-        const variedad = (campo === 'variedad' ? valor : row.variedad ?? VARIEDADES[0]) as Variedad;
-        const rangoTalle = (campo === 'rangoTalle' ? valor : row.rangoTalle ?? RANGOS_TALLE[0]) as RangoTalle;
-        // Un ítem de una factura vieja no está en el catálogo: se respeta el
-        // precio con el que se facturó en su momento.
-        const esDelCatalogo = catalogoProductos.some(p => p.id === row.prodId);
-        return {
-          ...row,
-          variedad,
-          rangoTalle,
-          categoria: variedad,
-          talle: rangoTalle,
-          precio: esDelCatalogo ? findCatalogoPrecio(row.prodId, variedad, rangoTalle) : row.precio,
-        };
-      })
-    );
+  /** Cambia la variedad y vuelve a buscar los precios de los 4 rangos. */
+  const updateRowVariedad = (rowKey: string, variedad: Variedad) => {
+    updateRow(rowKey, row => {
+      // Un ítem de una factura vieja no está en el catálogo: se respetan los
+      // precios con los que se facturó en su momento.
+      const esDelCatalogo = catalogoProductos.some(p => p.id === row.prodId);
+      return {
+        ...row,
+        variedad,
+        precios: esDelCatalogo ? preciosDelCatalogo(row.prodId, variedad) : row.precios,
+      };
+    });
+  };
+
+  const updateRowCantidad = (rowKey: string, talle: Talle, cant: number) => {
+    updateRow(rowKey, row => ({ ...row, cantidades: { ...row.cantidades, [talle]: Math.max(0, Math.floor(cant) || 0) } }));
+  };
+
+  const updateRowPrecio = (rowKey: string, rango: RangoTalle, precio: number) => {
+    updateRow(rowKey, row => ({ ...row, precios: { ...row.precios, [rango]: Math.max(0, precio || 0) } }));
+  };
+
+  /** Fila 'simple' (ítem viejo sin desglose por talle): cantidad o precio único. */
+  const updateRowItemSimple = (rowKey: string, campo: 'cant' | 'precio', valor: number) => {
+    updateRow(rowKey, row => (row.item ? { ...row, item: { ...row.item, [campo]: Math.max(0, valor || 0) } } : row));
+  };
+
+  const clearRowProduct = (rowKey: string) => {
+    updateRow(rowKey, row => ({ ...nuevaFila(), rowKey: row.rowKey, color: row.color }));
   };
 
   const handleInvoiceClientChange = (value: string) => {
@@ -609,24 +608,12 @@ function App() {
     return catalogoProductos.filter((product) => product.nombre.toLowerCase().includes(text));
   };
 
-  const handleRowChange = (rowKey: string, field: keyof RowFactura, value: string | number) => {
-    setRows((rows) =>
-      rows.map((row) =>
-        row.rowKey !== rowKey
-          ? row
-          : {
-              ...row,
-              [field]: value,
-            }
-      )
-    );
+  const handleRowChange = (rowKey: string, field: 'query' | 'color', value: string) => {
+    updateRow(rowKey, row => ({ ...row, [field]: value }));
   };
 
   const addRow = () => {
-    setRows((rows) => [
-      ...rows,
-      { rowKey: `r${Date.now()}`, prodId: '', nombre: '', categoria: '', talle: '', color: '', cant: 1, precio: 0, query: '' },
-    ]);
+    setRows((rows) => [...rows, nuevaFila()]);
   };
 
   const removeRow = (rowKey: string) => {
@@ -635,8 +622,8 @@ function App() {
 
   const handleConfirmInvoice = async () => {
     if (!invoiceClienteActual) return;
-    const items = rows.filter((row) => row.prodId && row.cant > 0);
-    if (!items.length) return;
+    const items = filasAItems(rows);
+    if (!items.length) { error('Cargá la cantidad de al menos un talle'); return; }
     const subtotal = items.reduce((sum, item) => sum + item.precio * item.cant, 0);
     const factura: Factura = {
       id: editingFactura ? editingFactura.id : `f${Date.now()}`,
@@ -680,9 +667,7 @@ function App() {
       await logAudit(currentUser, accion, 'factura', factura.id, antes, despues);
     }
 
-    setRows([
-      { rowKey: 'r0', prodId: '', nombre: '', categoria: '', talle: '', color: '', cant: 1, precio: 0, query: '' },
-    ]);
+    setRows([nuevaFila()]);
     setInvoiceDate(today);
     setInvoiceNotas('');
     setInvoiceSena(0);
@@ -695,8 +680,8 @@ function App() {
 
   const handleGuardarPresupuesto = async () => {
     if (!invoiceClienteActual) return;
-    const items = rows.filter((row) => row.prodId && row.cant > 0);
-    if (!items.length) { error('Agregá al menos un producto'); return; }
+    const items = filasAItems(rows);
+    if (!items.length) { error('Cargá la cantidad de al menos un talle'); return; }
     const presupuesto: Presupuesto = {
       id: editingPresupuesto ? editingPresupuesto.id : `pres${Date.now()}`,
       clienteId: invoiceClienteActual.id,
@@ -718,7 +703,7 @@ function App() {
         ? prev.map(p => p.id === presupuesto.id ? presupuesto : p)
         : [presupuesto, ...prev]
     );
-    setRows([{ rowKey: 'r0', prodId: '', nombre: '', categoria: '', talle: '', color: '', cant: 1, precio: 0, query: '' }]);
+    setRows([nuevaFila()]);
     setInvoiceDate(today);
     setInvoiceNotas('');
     setInvoiceSena(0);
@@ -734,7 +719,7 @@ function App() {
     setInvoiceDate(pres.fecha);
     setInvoiceNotas(pres.notas || '');
     setInvoiceSena(0);
-    setRows(pres.items.map((item, i) => ({ ...item, rowKey: `r${i}`, query: '' })));
+    setRows(itemsAFilas(pres.items));
     setDescuentoPct(pres.descuento ? (Math.round(pres.descuento * 100) as 0 | 5 | 10 | 15) : 0);
     setPage('dashboard');
   };
@@ -762,7 +747,7 @@ function App() {
     if (!cliente) return;
     if (!cliente.tel) { error('Este cliente no tiene teléfono registrado'); return; }
     const wv = { wave: '\u{1F44B}', bag: '\u{1F6CD}', money: '\u{1F4B0}', hands: '\u{1F64C}' };
-    const lineas = pres.items.map(item => `- ${item.nombre} · ${item.talle} · ${formatMoney(item.precio)}`).join('\n');
+    const lineas = pres.items.map(item => `- ${item.nombre} · ${describirItem(item)} · ${item.cant} un. · ${formatMoney(item.precio)}`).join('\n');
     const mensaje = `Hola ${cliente.nombre} ${wv.wave}\nTe enviamos un presupuesto:\n\n${wv.bag} Productos:\n${lineas}\n\n${wv.money} Total: ${formatMoney(pres.total)}\n\nConfirmanos si esta todo bien y lo procesamos ${wv.hands}`;
     const tel = cliente.tel.replace(/\D/g, '');
     const url = `https://wa.me/54${tel}?text=${encodeURIComponent(mensaje)}`;
@@ -992,7 +977,7 @@ function App() {
     const cliente = clientes.find(c => c.id === factura.clienteId);
     if (cliente) setInvoiceClient(factura.clienteId);
     setInvoiceDate(factura.fecha);
-    setRows(factura.items.map((item, i) => ({ ...item, rowKey: `r${i}`, query: '' })));
+    setRows(itemsAFilas(factura.items));
     setDescuentoPct(factura.descuento ? (Math.round(factura.descuento * 100) as 0 | 5 | 10 | 15) : 0);
     setPage('dashboard');
   };
@@ -1097,6 +1082,62 @@ Se borrarán también sus ${cargados} precio${cargados !== 1 ? 's' : ''} cargado
       success(`Producto "${producto.nombre}" eliminado`);
     } catch (err: any) {
       error(`No se pudo eliminar: ${err.message ?? 'error desconocido'}`);
+    }
+  };
+
+  const propuestasSeparacion = useMemo(() => detectarCombinados(catalogoProductos), [catalogoProductos]);
+
+  /**
+   * Divide cada producto Piqué/Algodón en dos productos con los mismos precios.
+   * Primero crea los nuevos y copia los precios; recién al final borra el
+   * original, así un error a mitad de camino no deja el producto sin precios.
+   * Las facturas guardan nombre y precio propios, por lo que no se alteran.
+   */
+  const handleSepararPiqueAlgodon = async () => {
+    const aplicables = propuestasSeparacion.filter(p => !p.conflicto);
+    if (!aplicables.length) return;
+    setSeparando(true);
+    const ids = new Set(catalogoProductos.map(p => p.id));
+    const nuevoId = (nombre: string) => {
+      const base = slugCatalogo(nombre);
+      let id = base;
+      for (let n = 2; ids.has(id); n++) id = `${base}-${n}`;
+      ids.add(id);
+      return id;
+    };
+    let hechos = 0;
+    try {
+      for (const prop of aplicables) {
+        const precios = catalogoPrecios.filter(cp => cp.productoId === prop.original.id);
+        const nuevos: CatalogoProducto[] = [
+          { id: nuevoId(prop.nombrePique), nombre: prop.nombrePique, orden: prop.original.orden },
+          { id: nuevoId(prop.nombreAlgodon), nombre: prop.nombreAlgodon, orden: prop.original.orden + 1 },
+        ];
+        const nuevosPrecios: CatalogoPrecio[] = [];
+        for (const nuevo of nuevos) {
+          await saveCatalogoProducto(nuevo);
+          for (const cp of precios) {
+            await upsertCatalogoPrecio(nuevo.id, cp.variedad, cp.rangoTalle, cp.precio);
+            nuevosPrecios.push({ ...cp, productoId: nuevo.id });
+          }
+        }
+        await deleteCatalogoProducto(prop.original.id);
+
+        setCatalogoProductos(prev => [...prev.filter(p => p.id !== prop.original.id), ...nuevos]);
+        setCatalogoPrecios(prev => [...prev.filter(cp => cp.productoId !== prop.original.id), ...nuevosPrecios]);
+        if (currentUser) {
+          await logAudit(currentUser, 'PRODUCTO_SEPARADO', 'producto', prop.original.id,
+            { nombre: prop.original.nombre, precios: precios.length },
+            { productos: nuevos.map(n => ({ id: n.id, nombre: n.nombre })) });
+        }
+        hechos++;
+      }
+      success(`${hechos} producto${hechos !== 1 ? 's' : ''} separado${hechos !== 1 ? 's' : ''} en Piqué y Algodón`);
+      setSepararModalOpen(false);
+    } catch (err: any) {
+      error(`Se separaron ${hechos} de ${aplicables.length}. Error: ${err.message ?? 'error desconocido'}. Recargá la página antes de reintentar.`);
+    } finally {
+      setSeparando(false);
     }
   };
 
@@ -1635,7 +1676,10 @@ Se borrarán también sus ${cargados} precio${cargados !== 1 ? 's' : ''} cargado
     const map: Record<string, { nombre: string; talle: string; unidades: number; total: number }> = {};
     facturasFiltradas.forEach(f => {
       f.items.forEach(item => {
-        const descripcion = describirItem(item);
+        // Por talle y color se fragmenta demasiado: el ranking agrupa por variedad y rango.
+        const descripcion = item.variedad
+          ? [item.variedad, item.rangoTalle].filter(Boolean).join(' · ')
+          : describirItem(item);
         const key = `${item.nombre}||${descripcion}`;
         if (!map[key]) map[key] = { nombre: item.nombre, talle: descripcion, unidades: 0, total: 0 };
         map[key].unidades += item.cant;
@@ -2078,7 +2122,7 @@ Se borrarán también sus ${cargados} precio${cargados !== 1 ? 's' : ''} cargado
                     </h3>
                   </div>
                   {editingFactura && (
-                    <button type="button" onClick={() => { setEditingFactura(null); setRows([{ rowKey: 'r0', prodId: '', nombre: '', categoria: '', talle: '', color: '', cant: 1, precio: 0, query: '' }]); setInvoiceDate(today); setDescuentoPct(0); }} className="rounded-3xl bg-surface px-4 py-2 text-sm text-textPrimary ring-1 ring-border hover:bg-border">
+                    <button type="button" onClick={() => { setEditingFactura(null); setRows([nuevaFila()]); setInvoiceDate(today); setDescuentoPct(0); }} className="rounded-3xl bg-surface px-4 py-2 text-sm text-textPrimary ring-1 ring-border hover:bg-border">
                       Cancelar edición
                     </button>
                   )}
@@ -2121,29 +2165,22 @@ Se borrarán también sus ${cargados} precio${cargados !== 1 ? 's' : ''} cargado
                     </label>
                   </div>
                 </div>
-                <div className="mt-6 overflow-visible rounded-3xl border border-border">
-                  <div className="grid grid-cols-[minmax(180px,2fr)_130px_130px_70px_120px_120px_80px] gap-3 bg-surface px-5 py-4 text-xs uppercase tracking-[0.12em] text-textSecondary">
-                    <span>Producto</span>
-                    <span>Variedad</span>
-                    <span>Rango de talle</span>
-                    <span>Cant.</span>
-                    <span>Precio</span>
-                    <span>Subtotal</span>
-                    <span></span>
-                  </div>
-                  <div className="divide-y divide-slate-200 bg-panel overflow-visible">
-                    {rows.map((row) => {
-                      const matches = filteredProducts(row.query || '');
-                      const aviso = avisoPrecioFaltante(row);
-                      return (
-                        <div key={row.rowKey} className="grid grid-cols-[minmax(180px,2fr)_130px_130px_70px_120px_120px_80px] gap-3 px-5 py-4 items-start">
+                <div className="mt-6 space-y-4">
+                  {rows.map((row) => {
+                    const matches = filteredProducts(row.query || '');
+                    const avisos = avisosPrecioFaltante(row);
+                    const subtotal = subtotalDeFila(row);
+                    const unidades = unidadesDeFila(row);
+                    const usados = rangosUsados(row);
+                    return (
+                      <div key={row.rowKey} className="overflow-visible rounded-3xl border border-border bg-panel">
+                        <div className="grid grid-cols-1 gap-3 px-5 pt-4 md:grid-cols-[minmax(200px,2fr)_150px_minmax(140px,1fr)_140px_90px] md:items-start">
                           <div className="relative">
+                            <span className="mb-1 block text-xs uppercase tracking-[0.12em] text-textSecondary">Producto</span>
                             <input
                               value={row.prodId ? row.nombre : row.query}
                               onChange={(event) => {
-                                if (!row.prodId) {
-                                  handleRowChange(row.rowKey, 'query', event.target.value);
-                                }
+                                if (!row.prodId) handleRowChange(row.rowKey, 'query', event.target.value);
                               }}
                               onKeyDown={(event) => {
                                 if (event.key === 'Enter' && matches.length > 0 && !row.prodId) {
@@ -2156,35 +2193,24 @@ Se borrarán también sus ${cargados} precio${cargados !== 1 ? 's' : ''} cargado
                                   (event.target as HTMLInputElement).blur();
                                 }
                                 if (event.key === 'Backspace' && row.prodId) {
-                                  // Permitir eliminar producto seleccionado con Backspace
+                                  // Permitir cambiar el producto seleccionado con Backspace
                                   event.preventDefault();
-                                  handleRowChange(row.rowKey, 'prodId', '');
-                                  handleRowChange(row.rowKey, 'nombre', '');
-                                  handleRowChange(row.rowKey, 'categoria', '');
-                                  handleRowChange(row.rowKey, 'talle', '');
-                                  handleRowChange(row.rowKey, 'color', '');
-                                  handleRowChange(row.rowKey, 'query', '');
-                                  handleRowChange(row.rowKey, 'precio', 0);
+                                  clearRowProduct(row.rowKey);
                                 }
                               }}
-                              placeholder={row.prodId ? "Producto seleccionado (Backspace para cambiar)" : "Buscar producto..."}
+                              placeholder={row.prodId ? 'Producto seleccionado (Backspace para cambiar)' : 'Buscar producto...'}
                               className={`w-full rounded-3xl border border-border px-4 py-3 text-sm outline-none transition focus:border-accent ${
                                 row.prodId ? 'bg-green-900/20 text-green-300 border-green-600' : 'bg-surface text-textPrimary'
                               }`}
                               readOnly={!!row.prodId}
                             />
-                            {row.prodId && aviso && (
-                              <div className="mt-1 px-4 text-xs text-yellow-400">⚠ {aviso}</div>
-                            )}
                             {matches.length > 0 && row.query && row.query.trim().length > 0 && !row.prodId && (
                               <div className="absolute left-0 top-full z-[60] mt-2 max-h-60 w-full overflow-auto rounded-3xl border border-border bg-panel shadow-2xl">
-                                {matches.map((product, index) => (
+                                {matches.map((product) => (
                                   <button
                                     key={product.id}
                                     type="button"
-                                    onClick={() => {
-                                      updateRowProduct(row.rowKey, product);
-                                    }}
+                                    onClick={() => updateRowProduct(row.rowKey, product)}
                                     className="w-full px-4 py-3 text-left text-sm text-textPrimary transition hover:bg-surface border-b border-border last:border-b-0"
                                   >
                                     <div className="flex flex-col">
@@ -2199,67 +2225,49 @@ Se borrarán también sus ${cargados} precio${cargados !== 1 ? 's' : ''} cargado
                                     </div>
                                   </button>
                                 ))}
-                                {matches.length === 0 && row.query.trim().length > 2 && (
-                                  <div className="px-4 py-3 text-sm text-textSecondary">
-                                    No se encontraron productos
-                                  </div>
-                                )}
                               </div>
                             )}
                           </div>
                           <div>
-                            <select
-                              value={row.variedad ?? ''}
-                              disabled={!row.prodId}
-                              onChange={(event) => updateRowCombinacion(row.rowKey, 'variedad', event.target.value as Variedad)}
-                              className="w-full rounded-3xl border border-border bg-surface px-3 py-3 text-sm text-textPrimary outline-none transition focus:border-accent disabled:opacity-40"
-                            >
-                              {!row.variedad && <option value="">—</option>}
-                              {VARIEDADES.map(v => <option key={v} value={v}>{v}</option>)}
-                            </select>
-                          </div>
-                          <div>
-                            <select
-                              value={row.rangoTalle ?? ''}
-                              disabled={!row.prodId}
-                              onChange={(event) => updateRowCombinacion(row.rowKey, 'rangoTalle', event.target.value as RangoTalle)}
-                              className="w-full rounded-3xl border border-border bg-surface px-3 py-3 text-sm text-textPrimary outline-none transition focus:border-accent disabled:opacity-40"
-                            >
-                              {!row.rangoTalle && <option value="">—</option>}
-                              {RANGOS_TALLE.map(r => <option key={r} value={r}>{r}</option>)}
-                            </select>
-                          </div>
-                          <label className="space-y-2 text-sm text-textSecondary">
-                            <input
-                              type="number"
-                              min={1}
-                              value={formatNumberInput(row.cant)}
-                              onChange={(event) => handleRowChange(row.rowKey, 'cant', Number(event.target.value))}
-                              className="w-full rounded-3xl border border-border bg-surface px-3 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
-                            />
-                          </label>
-                          <div>
-                            <input
-                              value={formatNumberInput(row.precio)}
-                              onChange={(event) => handleRowChange(row.rowKey, 'precio', Number(event.target.value))}
-                              type="number"
-                              min={0}
-                              className={`w-full rounded-3xl border px-3 py-3 text-sm text-textPrimary outline-none transition focus:border-accent ${
-                                aviso ? 'border-yellow-600 bg-yellow-900/10' : 'border-border bg-surface'
-                              }`}
-                            />
-                          </div>
-                          <div className="flex flex-col text-sm">
-                            {descuentoPct > 0 ? (
-                              <>
-                                <span className="text-textSecondary line-through">{formatMoney(row.precio * row.cant)}</span>
-                                <span className="text-green-400 font-medium">{formatMoney(row.precio * row.cant * (1 - descuentoPct / 100))}</span>
-                              </>
+                            <span className="mb-1 block text-xs uppercase tracking-[0.12em] text-textSecondary">Variedad</span>
+                            {row.modo === 'simple' ? (
+                              <div className="px-1 py-3 text-sm text-textSecondary">{row.item ? describirItem({ ...row.item, color: '' }) || '—' : '—'}</div>
                             ) : (
-                              <span className="text-textPrimary">{formatMoney(row.precio * row.cant)}</span>
+                              <select
+                                value={row.variedad ?? ''}
+                                disabled={!row.prodId}
+                                onChange={(event) => updateRowVariedad(row.rowKey, event.target.value as Variedad)}
+                                className="w-full rounded-3xl border border-border bg-surface px-3 py-3 text-sm text-textPrimary outline-none transition focus:border-accent disabled:opacity-40"
+                              >
+                                {!row.variedad && <option value="">—</option>}
+                                {VARIEDADES.map(v => <option key={v} value={v}>{v}</option>)}
+                              </select>
                             )}
                           </div>
-                          <div className="flex items-center justify-end">
+                          <div>
+                            <span className="mb-1 block text-xs uppercase tracking-[0.12em] text-textSecondary">Color</span>
+                            <input
+                              type="text"
+                              value={row.color}
+                              onChange={(event) => handleRowChange(row.rowKey, 'color', event.target.value)}
+                              placeholder="Opcional"
+                              maxLength={60}
+                              className="w-full rounded-3xl border border-border bg-surface px-3 py-3 text-sm text-textPrimary outline-none transition focus:border-accent"
+                            />
+                          </div>
+                          <div className="text-sm md:text-right">
+                            <span className="mb-1 block text-xs uppercase tracking-[0.12em] text-textSecondary">Subtotal</span>
+                            {descuentoPct > 0 ? (
+                              <div className="flex flex-col py-1">
+                                <span className="text-textSecondary line-through">{formatMoney(subtotal)}</span>
+                                <span className="text-green-400 font-medium">{formatMoney(subtotal * (1 - descuentoPct / 100))}</span>
+                              </div>
+                            ) : (
+                              <div className="py-3 font-medium text-textPrimary">{formatMoney(subtotal)}</div>
+                            )}
+                            {unidades > 0 && <div className="text-xs text-textSecondary">{unidades} un.</div>}
+                          </div>
+                          <div className="flex items-end justify-end md:pt-6">
                             <button
                               type="button"
                               onClick={() => removeRow(row.rowKey)}
@@ -2269,12 +2277,85 @@ Se borrarán también sus ${cargados} precio${cargados !== 1 ? 's' : ''} cargado
                             </button>
                           </div>
                         </div>
-                      );
-                    })}
-                  </div>
+
+                        {row.modo === 'simple' && row.item ? (
+                          <div className="flex flex-wrap items-end gap-4 px-5 py-4">
+                            <label className="text-xs text-textSecondary">
+                              Cantidad
+                              <input
+                                type="number"
+                                min={0}
+                                value={formatNumberInput(row.item.cant)}
+                                onChange={(event) => updateRowItemSimple(row.rowKey, 'cant', Number(event.target.value))}
+                                className="mt-1 block w-24 rounded-2xl border border-border bg-surface px-3 py-2 text-sm text-textPrimary outline-none transition focus:border-accent"
+                              />
+                            </label>
+                            <label className="text-xs text-textSecondary">
+                              Precio unit.
+                              <input
+                                type="number"
+                                min={0}
+                                value={formatNumberInput(row.item.precio)}
+                                onChange={(event) => updateRowItemSimple(row.rowKey, 'precio', Number(event.target.value))}
+                                className="mt-1 block w-32 rounded-2xl border border-border bg-surface px-3 py-2 text-sm text-textPrimary outline-none transition focus:border-accent"
+                              />
+                            </label>
+                            <p className="text-xs text-textSecondary">
+                              Ítem facturado antes del desglose por talle: se conserva tal como estaba.
+                            </p>
+                          </div>
+                        ) : (
+                          <div className={`grid grid-cols-1 gap-3 px-5 py-4 sm:grid-cols-2 xl:grid-cols-4 ${row.prodId ? '' : 'pointer-events-none opacity-40'}`}>
+                            {RANGOS_TALLE.map(rango => {
+                              const sinPrecio = usados.includes(rango) && precioDelRango(row, rango) <= 0;
+                              return (
+                                <div key={rango} className={`rounded-2xl border px-3 py-3 ${sinPrecio ? 'border-yellow-600 bg-yellow-900/10' : 'border-border bg-surface'}`}>
+                                  <div className="mb-2 flex items-center justify-between gap-2">
+                                    <span className="text-xs font-semibold uppercase tracking-[0.08em] text-textSecondary">{rango}</span>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      title={`Precio unitario ${rango}`}
+                                      value={formatNumberInput(precioDelRango(row, rango))}
+                                      onChange={(event) => updateRowPrecio(row.rowKey, rango, Number(event.target.value))}
+                                      placeholder="$"
+                                      className="w-24 rounded-xl border border-border bg-panel px-2 py-1 text-right text-xs text-textPrimary outline-none transition focus:border-accent"
+                                    />
+                                  </div>
+                                  <div className="flex flex-wrap gap-2">
+                                    {tallesDelRango(rango).map(talle => (
+                                      <label key={talle} className="flex w-14 flex-col items-center text-[11px] text-textSecondary">
+                                        {talle}
+                                        <input
+                                          type="number"
+                                          min={0}
+                                          value={formatNumberInput(row.cantidades[talle] ?? 0)}
+                                          onChange={(event) => updateRowCantidad(row.rowKey, talle, Number(event.target.value))}
+                                          aria-label={`Cantidad talle ${talle}`}
+                                          className={`mt-1 w-full rounded-xl border px-1 py-2 text-center text-sm text-textPrimary outline-none transition focus:border-accent ${
+                                            (row.cantidades[talle] ?? 0) > 0 ? 'border-accent bg-accent/10' : 'border-border bg-panel'
+                                          }`}
+                                        />
+                                      </label>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {avisos.length > 0 && (
+                          <div className="px-5 pb-4 text-xs text-yellow-400">
+                            {avisos.map(msg => <p key={msg}>⚠ {msg}</p>)}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
                 {(() => {
-                  const faltantes = rows.map(avisoPrecioFaltante).filter(Boolean) as string[];
+                  const faltantes = rows.flatMap(avisosPrecioFaltante);
                   if (faltantes.length === 0) return null;
                   return (
                     <div className="mt-4 rounded-2xl bg-yellow-900/20 border border-yellow-700 px-4 py-3 text-sm text-yellow-300">
@@ -2282,7 +2363,7 @@ Se borrarán también sus ${cargados} precio${cargados !== 1 ? 's' : ''} cargado
                         <p key={msg}>⚠ {msg}</p>
                       ))}
                       <p className="mt-2 text-xs text-yellow-400/80">
-                        Cargalos en la pantalla de Productos para que se autocompleten.
+                        Cargalos en la pantalla de Productos para que se autocompleten, o escribí el precio en el recuadro del rango.
                       </p>
                     </div>
                   );
@@ -2626,7 +2707,10 @@ Se borrarán también sus ${cargados} precio${cargados !== 1 ? 's' : ''} cargado
                             <td className="px-5 py-4 text-textSecondary">{factura.fecha}</td>
                             <td className="px-5 py-4">{cliente?.nombre ?? 'Cliente eliminado'}</td>
                             <td className="px-5 py-4 text-textSecondary">
-                              {factura.items.map((item) => `${item.nombre} ×${item.cant}`).join(', ')}
+                              {factura.items.map((item) => {
+                                const variante = describirItem(item);
+                                return `${item.nombre}${variante ? ` (${variante})` : ''} ×${item.cant}`;
+                              }).join(', ')}
                             </td>
                             <td className="px-5 py-4 font-semibold">{formatMoney(factura.total)}</td>
                             <td className="px-5 py-4">
@@ -2773,6 +2857,15 @@ Se borrarán también sus ${cargados} precio${cargados !== 1 ? 's' : ''} cargado
                     >
                       Exportar precios
                     </button>
+                    {propuestasSeparacion.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setSepararModalOpen(true)}
+                        className="rounded-3xl border border-yellow-700 bg-yellow-900/20 px-4 py-2 text-sm font-semibold text-yellow-300 transition hover:bg-yellow-900/40 whitespace-nowrap"
+                      >
+                        Separar Piqué / Algodón ({propuestasSeparacion.length})
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => {
@@ -3590,6 +3683,69 @@ Se borrarán también sus ${cargados} precio${cargados !== 1 ? 's' : ''} cargado
 
         </main>
       </div>
+
+      {/* Modal: separar productos Piqué / Algodón */}
+      <Modal
+        title="Separar productos Piqué / Algodón"
+        open={separarModalOpen}
+        onClose={() => { if (!separando) setSepararModalOpen(false); }}
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-textSecondary">
+            Estos productos tienen los dos materiales juntos. Cada uno se va a dividir en dos productos
+            independientes con la misma grilla de precios, y el original se elimina para que no se pueda
+            seguir facturando. Las facturas ya emitidas no cambian.
+          </p>
+          <div className="overflow-hidden rounded-2xl border border-border">
+            <table className="w-full text-sm">
+              <thead className="bg-surface text-xs uppercase tracking-[0.08em] text-textSecondary">
+                <tr>
+                  <th className="px-4 py-2 text-left">Producto actual</th>
+                  <th className="px-4 py-2 text-left">Se divide en</th>
+                </tr>
+              </thead>
+              <tbody>
+                {propuestasSeparacion.map(prop => {
+                  const cantPrecios = catalogoPrecios.filter(cp => cp.productoId === prop.original.id).length;
+                  return (
+                    <tr key={prop.original.id} className="border-t border-border align-top">
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-textPrimary">{prop.original.nombre}</div>
+                        <div className="text-xs text-textSecondary">{cantPrecios} precio{cantPrecios !== 1 ? 's' : ''} cargado{cantPrecios !== 1 ? 's' : ''}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="text-textPrimary">→ {prop.nombrePique}</div>
+                        <div className="text-textPrimary">→ {prop.nombreAlgodon}</div>
+                        {prop.conflicto && (
+                          <div className="mt-1 text-xs text-yellow-400">⚠ {prop.conflicto}. Renombralo antes; este no se va a separar.</div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              disabled={separando}
+              onClick={() => setSepararModalOpen(false)}
+              className="rounded-3xl bg-surface px-4 py-2 text-sm text-textPrimary ring-1 ring-border hover:bg-border disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              disabled={separando || propuestasSeparacion.every(p => p.conflicto)}
+              onClick={handleSepararPiqueAlgodon}
+              className="rounded-3xl bg-accent px-5 py-2 text-sm font-semibold text-white transition hover:bg-indigo-600 disabled:opacity-50"
+            >
+              {separando ? 'Separando...' : 'Confirmar separación'}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Modal: alta / renombrado de producto del catálogo */}
       <Modal
