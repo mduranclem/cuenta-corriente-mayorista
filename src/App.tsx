@@ -509,6 +509,20 @@ function App() {
   // Usado por los export de deudores (PDF / Excel)
   const clientesConDeudaDetalle = cuentasConDeuda;
 
+  /**
+   * Seña cobrada al emitir la factura. Se guarda como un pago con la nota
+   * "Seña factura #XXXXXXXX", así que se busca por esa nota y por cliente.
+   */
+  const senaDeFactura = (factura: Factura): number => {
+    const nota = `Seña factura #${factura.id.slice(-8).toUpperCase()}`;
+    return pagos
+      .filter(p => p.clienteId === factura.clienteId && p.notas === nota)
+      .reduce((sum, p) => sum + p.monto, 0);
+  };
+
+  const imprimirFactura = (factura: Factura, cliente: Cliente) =>
+    printInvoice(factura, cliente, senaDeFactura(factura));
+
   const getListaById = (id: string): ListaPrecio =>
     listasPrecios.find(l => l.id === id) ?? { id: 'general', nombre: 'General' };
 
@@ -2646,7 +2660,7 @@ Se borrarán también sus ${cargados} precio${cargados !== 1 ? 's' : ''} cargado
                   facturas={facturas}
                   pagos={pagos}
                   onError={error}
-                  onImprimirFactura={(f) => printInvoice(f, clienteActual)}
+                  onImprimirFactura={(f) => imprimirFactura(f, clienteActual)}
                 />
               </div>
 
@@ -2717,7 +2731,7 @@ Se borrarán también sus ${cargados} precio${cargados !== 1 ? 's' : ''} cargado
                               <div className="flex flex-wrap gap-2">
                                 <button
                                   type="button"
-                                  onClick={() => cliente && printInvoice(factura, cliente)}
+                                  onClick={() => cliente && imprimirFactura(factura, cliente)}
                                   className="rounded-3xl bg-blue-900 px-3 py-2 text-xs text-blue-300 transition hover:bg-blue-800"
                                   disabled={!cliente}
                                 >
@@ -3954,6 +3968,7 @@ Se borrarán también sus ${cargados} precio${cargados !== 1 ? 's' : ''} cargado
           const factura = facturas.find(f => f.id === selectedInvoice);
           const cliente = clientes.find(c => c.id === factura?.clienteId);
           if (!factura || !cliente) return null;
+          const sena = senaDeFactura(factura);
 
           return (
             <div className="space-y-6">
@@ -4010,6 +4025,26 @@ Se borrarán también sus ${cargados} precio${cargados !== 1 ? 's' : ''} cargado
                           {formatMoney(factura.total)}
                         </td>
                       </tr>
+                      {sena > 0 && (
+                        <>
+                          <tr className="border-t border-border">
+                            <td colSpan={3} className="px-4 py-3 text-right text-textSecondary">
+                              Seña recibida:
+                            </td>
+                            <td className="px-4 py-3 text-right text-green-400">
+                              - {formatMoney(sena)}
+                            </td>
+                          </tr>
+                          <tr className="border-t border-border bg-surface">
+                            <td colSpan={3} className="px-4 py-3 text-right font-semibold">
+                              SALDO PENDIENTE:
+                            </td>
+                            <td className="px-4 py-3 text-right font-bold text-red-400">
+                              {formatMoney(factura.total - sena)}
+                            </td>
+                          </tr>
+                        </>
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -4027,7 +4062,7 @@ Se borrarán también sus ${cargados} precio${cargados !== 1 ? 's' : ''} cargado
               <div className="flex justify-end gap-3">
                 <button
                   type="button"
-                  onClick={() => printInvoice(factura, cliente)}
+                  onClick={() => imprimirFactura(factura, cliente)}
                   className="rounded-3xl bg-blue-900 px-5 py-3 text-sm font-semibold text-blue-300 transition hover:bg-blue-800"
                 >
                   🖨️ Imprimir comprobante
@@ -4124,7 +4159,7 @@ Se borrarán también sus ${cargados} precio${cargados !== 1 ? 's' : ''} cargado
               facturas={facturas}
               pagos={pagos}
               onError={error}
-              onImprimirFactura={(f) => printInvoice(f, cuentaDetalleCliente)}
+              onImprimirFactura={(f) => imprimirFactura(f, cuentaDetalleCliente)}
             />
             <button
               type="button"
