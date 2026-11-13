@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Modal } from './components/Modal';
 import { Toast } from './components/Toast';
@@ -282,6 +282,21 @@ function App() {
   const [catalogoDraft, setCatalogoDraft] = useState<Record<string, string>>({});
   const [catalogoNombreModalOpen, setCatalogoNombreModalOpen] = useState(false);
   const [separarModalOpen, setSepararModalOpen] = useState(false);
+  // Evita guardar dos veces la misma factura con un doble clic. El ref
+  // corta en el mismo instante; el state deshabilita el botón en pantalla.
+  const guardandoRef = useRef(false);
+  const [guardando, setGuardando] = useState(false);
+  const conGuardado = async (accion: () => Promise<void>) => {
+    if (guardandoRef.current) return;
+    guardandoRef.current = true;
+    setGuardando(true);
+    try {
+      await accion();
+    } finally {
+      guardandoRef.current = false;
+      setGuardando(false);
+    }
+  };
   const [separando, setSeparando] = useState(false);
   const [catalogoNombreEdit, setCatalogoNombreEdit] = useState<CatalogoProducto | null>(null);
   const [catalogoNombre, setCatalogoNombre] = useState('');
@@ -634,7 +649,9 @@ function App() {
     setRows((rows) => rows.filter((row) => row.rowKey !== rowKey));
   };
 
-  const handleConfirmInvoice = async () => {
+  const handleConfirmInvoice = () => conGuardado(confirmarFactura);
+
+  const confirmarFactura = async () => {
     if (!invoiceClienteActual) return;
     const items = filasAItems(rows);
     if (!items.length) { error('Cargá la cantidad de al menos un talle'); return; }
@@ -648,11 +665,15 @@ function App() {
       descuento: descuentoPct > 0 ? descuentoPct / 100 : undefined,
       notas: invoiceNotas.trim() || undefined,
     };
-    const nextFacturas = editingFactura
-      ? facturas.map(f => f.id === factura.id ? factura : f)
-      : [factura, ...facturas];
-    setFacturas(nextFacturas);
-    await saveFactura(factura);
+    try {
+      await saveFactura(factura);
+    } catch (err: any) {
+      error(`No se pudo guardar la factura: ${err?.message ?? 'error desconocido'}`);
+      return;
+    }
+    setFacturas(prev => editingFactura
+      ? prev.map(f => f.id === factura.id ? factura : f)
+      : [factura, ...prev]);
 
     // Registrar seña si hay monto
     if (invoiceSena > 0 && !editingFactura) {
@@ -692,7 +713,9 @@ function App() {
     setPage('historial');
   };
 
-  const handleGuardarPresupuesto = async () => {
+  const handleGuardarPresupuesto = () => conGuardado(guardarPresupuesto);
+
+  const guardarPresupuesto = async () => {
     if (!invoiceClienteActual) return;
     const items = filasAItems(rows);
     if (!items.length) { error('Cargá la cantidad de al menos un talle'); return; }
@@ -958,9 +981,15 @@ function App() {
     const cliente = clientes.find(c => c.id === factura.clienteId);
     if (!window.confirm(`¿Eliminar esta factura de ${cliente?.nombre ?? 'cliente eliminado'} por ${formatMoney(factura.total)}?`)) return;
 
-    const nextFacturas = facturas.filter(f => f.id !== facturaId);
-    setFacturas(nextFacturas);
-    await deleteFactura(facturaId);
+    // Recién se saca de la pantalla cuando la base confirma el borrado; si
+    // no, parecía eliminada y volvía a aparecer al recargar.
+    try {
+      await deleteFactura(facturaId);
+    } catch (err: any) {
+      error(`No se pudo eliminar la factura: ${err?.message ?? 'error desconocido'}`);
+      return;
+    }
+    setFacturas(prev => prev.filter(f => f.id !== facturaId));
 
     if (currentUser) {
       const antes = { clienteId: factura.clienteId, clienteNombre: cliente?.nombre, fecha: factura.fecha, total: factura.total, items: factura.items };
@@ -975,9 +1004,13 @@ function App() {
     const cliente = clientes.find(c => c.id === pago.clienteId);
     if (!window.confirm(`¿Eliminar este pago de ${cliente?.nombre ?? 'cliente eliminado'} por ${formatMoney(pago.monto)}?`)) return;
 
-    const nextPagos = pagos.filter(p => p.id !== pagoId);
-    setPagos(nextPagos);
-    await deletePago(pagoId);
+    try {
+      await deletePago(pagoId);
+    } catch (err: any) {
+      error(`No se pudo eliminar el pago: ${err?.message ?? 'error desconocido'}`);
+      return;
+    }
+    setPagos(prev => prev.filter(p => p.id !== pagoId));
 
     if (currentUser) {
       const antes = { clienteId: pago.clienteId, clienteNombre: cliente?.nombre, fecha: pago.fecha, monto: pago.monto, forma: pago.forma, notas: pago.notas };
@@ -2480,7 +2513,7 @@ Se borrarán también sus ${cargados} precio${cargados !== 1 ? 's' : ''} cargado
                   <button
                     type="button"
                     onClick={handleGuardarPresupuesto}
-                    disabled={!invoiceClienteActual || rows.every((row) => !row.prodId)}
+                    disabled={guardando || !invoiceClienteActual || rows.every((row) => !row.prodId)}
                     className="flex-1 rounded-3xl border border-border bg-surface py-3 text-sm font-semibold text-textPrimary transition hover:bg-border disabled:opacity-50"
                   >
                     Guardar como presupuesto
@@ -2489,9 +2522,9 @@ Se borrarán también sus ${cargados} precio${cargados !== 1 ? 's' : ''} cargado
                     type="button"
                     onClick={handleConfirmInvoice}
                     className="flex-1 rounded-3xl bg-accent py-3 text-sm font-semibold text-white transition hover:bg-indigo-600 disabled:opacity-50"
-                    disabled={!invoiceClienteActual || rows.every((row) => !row.prodId)}
+                    disabled={guardando || !invoiceClienteActual || rows.every((row) => !row.prodId)}
                   >
-                    Confirmar factura
+                    {guardando ? 'Guardando...' : 'Confirmar factura'}
                   </button>
                 </div>
               </div>
