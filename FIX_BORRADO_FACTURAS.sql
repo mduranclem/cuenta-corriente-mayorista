@@ -43,4 +43,4 @@ CREATE TRIGGER trg_prevent_mass_delete
 SELECT tgname, tgrelid::regclass AS tabla, tgfoid::regproc AS funcion
 FROM pg_trigger
 WHERE tgname = 'trg_prevent_mass_delete'
-ORDER BY tabla::text;
+ORDER BY tgrelid::regclass::text;
